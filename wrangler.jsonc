@@ -2,6 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "workscout",
   "main": "worker/index.ts",
+  "routes": [
+    { "pattern": "workscout.samyao.me", "custom_domain": true }
+  ],
   "compatibility_date": "2026-10-03",
   "assets": {
     "directory": "./dist",

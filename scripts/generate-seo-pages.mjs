@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const ORIGIN = "https://workscout.nzs.workers.dev";
+const ORIGIN = "https://workscout.samyao.me";
 const UPDATED = "2026-10-04";
 const out = path.resolve("public");
 

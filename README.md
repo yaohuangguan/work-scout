@@ -1,12 +1,12 @@
 # WorkScout
 
-[![CI](https://github.com/yaohuangguan/work-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/work-scout/actions/workflows/ci.yml) [![Live](https://img.shields.io/badge/live-WorkScout-266a49)](https://workscout.nzs.workers.dev)
+[![CI](https://github.com/yaohuangguan/work-scout/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/work-scout/actions/workflows/ci.yml) [![Live](https://img.shields.io/badge/live-WorkScout-266a49)](https://workscout.samyao.me)
 
 **Find remote work you can actually take.**
 
 WorkScout searches both traditional remote-job feeds and direct hiring leads, then ranks opportunities by skill match, location eligibility, flexibility, and freshness — without hiding the original source.
 
-[Live app](https://workscout.nzs.workers.dev) · [Report a bug](https://github.com/yaohuangguan/work-scout/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/yaohuangguan/work-scout/issues/new?template=feature_request.yml)
+[Live app](https://workscout.samyao.me) · [Report a bug](https://github.com/yaohuangguan/work-scout/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/yaohuangguan/work-scout/issues/new?template=feature_request.yml)
 
 ![WorkScout home screen](docs/assets/workscout-home.png)
 
@@ -279,7 +279,7 @@ Cloudflare resources:
 
 - Worker: `workscout`
 - D1 database: `workscout-db`
-- Production: https://workscout.nzs.workers.dev
+- Production: https://workscout.samyao.me
 
 ## Repository structure
 
