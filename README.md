@@ -103,7 +103,32 @@ The current version supports:
 - flexible-work filtering
 - direct-lead filtering
 
-Saved data stays on the device for now, so the product works without requiring an account.
+Saved bookmarks stay on the device for now, so basic discovery still works without requiring an account.
+
+### Scout Watch
+
+Any live search can become a **Scout Watch**.
+
+WorkScout stores the search constraints in D1. An hourly Cloudflare Cron scheduler refreshes the oldest watches that have been due for at least 6 hours. A watch keeps a baseline of already-known opportunities and marks only newly discovered matches as **New**.
+
+Watch matching is intentionally stricter than interactive search:
+
+- the opportunity must contain explicit keyword-match evidence
+- restricted locations are excluded
+- low-score results are excluded
+- previously seen opportunities are deduplicated by item ID
+
+The browser generates an opaque random client key. The server stores only its SHA-256 hash, so watches can persist without introducing user accounts.
+
+### Apply Pipeline
+
+Promising opportunities can be moved through:
+
+`Saved → Contacted → Applied → Interview → Offer / Closed`
+
+Pipeline state is persisted in D1 against the same anonymous client hash. The UI provides a lightweight kanban view plus status controls directly from an opportunity detail view.
+
+This turns WorkScout from a discovery-only tool into a workflow that continues after the first click.
 
 ### Post work
 
@@ -138,10 +163,16 @@ OpenMesh HTTP runtime
     |
     +--> typed routes / middleware / body parsing
     +--> Reddit / HN / remote-job APIs
+    +--> Scout Watch + Apply Pipeline APIs
     +--> openmesh-node/db
             |
             v
         Cloudflare D1
+
+Cloudflare Cron (every 6 hours)
+    |
+    +--> refresh due Scout Watches
+    +--> persist only newly discovered matches
 ```
 
 Cloudflare's Node compatibility layer provides the `node:http` server APIs OpenMesh uses. The OpenMesh server listens on a Worker-local virtual port; `cloudflare:node` bridges Worker requests into it.
@@ -217,7 +248,7 @@ npm run smoke
 4. a real OpenMesh control-plane/service-discovery test using `app.mesh()`
 5. frontend production build
 
-The smoke test starts the real local Wrangler runtime and verifies:
+The smoke test starts the real local Wrangler runtime and verifies the OpenMesh Worker, D1 community flow, Scout Watch baseline/new-match behavior, Apply Pipeline persistence, and SPA assets:
 
 - OpenMesh Worker health
 - D1 readiness

@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Eligibility = "eligible" | "uncertain" | "restricted";
-type View = "explore" | "saved";
+type View = "explore" | "saved" | "watches" | "pipeline";
 type Mode = "all" | "leads" | "eligible" | "flexible";
+type PipelineStatus = "saved" | "contacted" | "applied" | "interview" | "offer" | "closed";
 type Freshness = "all" | "7" | "30";
 
 type WorkItem = {
@@ -39,6 +40,38 @@ type RecentSearch = {
   types: string[];
 };
 
+type WatchSummary = {
+  id: string;
+  label: string;
+  query: string;
+  country: string;
+  countryLabel: string;
+  hours: number;
+  types: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastCheckedAt: string | null;
+  lastMatchAt: string | null;
+  enabled: boolean;
+  lastError: string;
+  matchCount: number;
+  newCount: number;
+};
+
+type WatchMatch = {
+  item: WorkItem;
+  firstSeenAt: string;
+  isNew: boolean;
+};
+
+type PipelineEntry = {
+  item: WorkItem;
+  status: PipelineStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const typeOptions = [
   ["contract", "Contract"],
   ["part-time", "Part-time"],
@@ -54,13 +87,37 @@ const examples = [
   "AI automation + website maintenance",
 ];
 
+const pipelineColumns: Array<{ value: PipelineStatus; label: string }> = [
+  { value: "saved", label: "Saved" },
+  { value: "contacted", label: "Contacted" },
+  { value: "applied", label: "Applied" },
+  { value: "interview", label: "Interview" },
+  { value: "offer", label: "Offer" },
+  { value: "closed", label: "Closed" },
+];
+
 const STORAGE = {
   saved: "workscout:saved:v1",
   recent: "workscout:recent:v1",
+  client: "workscout:client:v1",
 };
 
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 const apiUrl = (path: string) => `${API_BASE}${path}`;
+
+function clientKey() {
+  const existing = localStorage.getItem(STORAGE.client);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  localStorage.setItem(STORAGE.client, created);
+  return created;
+}
+
+function apiFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("x-workscout-client", clientKey());
+  return fetch(apiUrl(path), { ...init, headers });
+}
 
 const countryNames: Record<string, string> = {
   ANY: "Anywhere / not sure",
@@ -189,13 +246,17 @@ function WorkCard({
 function DetailModal({
   item,
   saved,
+  pipelineStatus,
   onClose,
   onToggleSave,
+  onPipelineStatus,
 }: {
   item: WorkItem;
   saved: boolean;
+  pipelineStatus?: PipelineStatus;
   onClose: () => void;
   onToggleSave: (item: WorkItem) => void;
+  onPipelineStatus: (item: WorkItem, status: PipelineStatus) => void;
 }) {
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -242,6 +303,21 @@ function DetailModal({
         )}
 
         <div className="detail-actions">
+          <label className="pipeline-select-wrap">
+            <span>Pipeline</span>
+            <select
+              value={pipelineStatus || ""}
+              onChange={(event) => {
+                const value = event.target.value as PipelineStatus;
+                if (value) onPipelineStatus(item, value);
+              }}
+            >
+              <option value="">Not tracked</option>
+              {pipelineColumns.map((column) => (
+                <option value={column.value} key={column.value}>{column.label}</option>
+              ))}
+            </select>
+          </label>
           <button className={`secondary-button save-wide ${saved ? "is-saved" : ""}`} onClick={() => onToggleSave(item)}>
             <BookmarkIcon filled={saved} /> {saved ? "Saved" : "Save for later"}
           </button>
@@ -251,6 +327,187 @@ function DetailModal({
         </div>
       </article>
     </div>
+  );
+}
+
+function WatchPage({
+  watches,
+  selectedWatchId,
+  matches,
+  busyId,
+  onOpen,
+  onRun,
+  onDelete,
+  onBack,
+  saved,
+  onToggleSave,
+  onOpenItem,
+}: {
+  watches: WatchSummary[];
+  selectedWatchId: string | null;
+  matches: WatchMatch[];
+  busyId: string | null;
+  onOpen: (id: string) => void;
+  onRun: (id: string) => void;
+  onDelete: (id: string) => void;
+  onBack: () => void;
+  saved: WorkItem[];
+  onToggleSave: (item: WorkItem) => void;
+  onOpenItem: (item: WorkItem) => void;
+}) {
+  const selected = watches.find((watch) => watch.id === selectedWatchId);
+
+  if (selected) {
+    return (
+      <section className="saved-page watch-page">
+        <div className="saved-head">
+          <div>
+            <button className="back-link" onClick={onBack}>← All watches</button>
+            <span className="eyebrow">Scout Watch</span>
+            <h1>{selected.label || selected.query}</h1>
+            <p>{selected.countryLabel} · ≤{selected.hours}h/week · {selected.types.join(", ")}</p>
+          </div>
+          <button className="secondary-button" onClick={() => onRun(selected.id)} disabled={busyId === selected.id}>
+            {busyId === selected.id ? "Checking…" : "Check now"}
+          </button>
+        </div>
+
+        <div className="watch-summary-bar">
+          <div><strong>{matches.length}</strong><span>tracked matches</span></div>
+          <div><strong>{matches.filter((match) => match.isNew).length}</strong><span>new</span></div>
+          <div><strong>{selected.lastCheckedAt ? relativeDate(selected.lastCheckedAt) : "Never"}</strong><span>last checked</span></div>
+        </div>
+
+        {matches.length ? (
+          <div className="result-grid">
+            {matches.map(({ item, isNew }) => (
+              <div className={isNew ? "watch-match-new" : ""} key={item.id}>
+                {isNew && <span className="new-match-badge">New match</span>}
+                <WorkCard
+                  item={item}
+                  saved={saved.some((savedItem) => savedItem.id === item.id)}
+                  onToggleSave={onToggleSave}
+                  onOpen={onOpenItem}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="saved-empty compact-empty">
+            <h2>No tracked matches yet</h2>
+            <p>Run the watch now or let the scheduled scout check again later.</p>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="saved-page watch-page">
+      <div className="saved-head">
+        <div>
+          <span className="eyebrow">Always-on discovery</span>
+          <h1>Scout Watches</h1>
+          <p>WorkScout re-runs due searches about every 6 hours and keeps only newly discovered opportunities.</p>
+        </div>
+      </div>
+
+      {watches.length ? (
+        <div className="watch-grid">
+          {watches.map((watch) => (
+            <article className="watch-card" key={watch.id}>
+              <div className="watch-card-top">
+                <div>
+                  <span className="watch-live-dot" />
+                  <span>{watch.enabled ? "Watching" : "Paused"}</span>
+                </div>
+                {watch.newCount > 0 && <strong className="new-count">{watch.newCount} new</strong>}
+              </div>
+              <h2>{watch.label || watch.query}</h2>
+              <p>{watch.query}</p>
+              <div className="watch-meta">
+                <span>{watch.countryLabel}</span>
+                <span>≤{watch.hours}h/week</span>
+                <span>{watch.matchCount} tracked</span>
+              </div>
+              <div className="watch-card-footer">
+                <span>{watch.lastCheckedAt ? `Checked ${relativeDate(watch.lastCheckedAt)}` : "Not checked yet"}</span>
+                <div>
+                  <button className="detail-button" onClick={() => onDelete(watch.id)}>Delete</button>
+                  <button className="secondary-button" onClick={() => onRun(watch.id)} disabled={busyId === watch.id}>
+                    {busyId === watch.id ? "Checking…" : "Check"}
+                  </button>
+                  <button className="primary-button" onClick={() => onOpen(watch.id)}>Open</button>
+                </div>
+              </div>
+              {watch.lastError && <div className="watch-error">{watch.lastError}</div>}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="saved-empty">
+          <h2>No watches yet</h2>
+          <p>Run a search, then choose <strong>Watch this search</strong>. WorkScout will keep checking it in the background.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PipelinePage({
+  entries,
+  onOpen,
+  onMove,
+}: {
+  entries: PipelineEntry[];
+  onOpen: (item: WorkItem) => void;
+  onMove: (item: WorkItem, status: PipelineStatus) => void;
+}) {
+  return (
+    <section className="pipeline-page">
+      <div className="saved-head">
+        <div>
+          <span className="eyebrow">From discovery to outcome</span>
+          <h1>Apply Pipeline</h1>
+          <p>Keep track of what you saved, contacted, applied to, and what moved forward.</p>
+        </div>
+      </div>
+
+      <div className="pipeline-board">
+        {pipelineColumns.map((column) => {
+          const items = entries.filter((entry) => entry.status === column.value);
+          return (
+            <section className="pipeline-column" key={column.value}>
+              <header>
+                <span>{column.label}</span>
+                <strong>{items.length}</strong>
+              </header>
+              <div className="pipeline-list">
+                {items.map((entry) => (
+                  <article className="pipeline-card" key={entry.item.id}>
+                    <button onClick={() => onOpen(entry.item)}>
+                      <span className="pipeline-source">{entry.item.source}</span>
+                      <strong>{entry.item.title}</strong>
+                      <span>{entry.item.company}</span>
+                    </button>
+                    <select
+                      value={entry.status}
+                      onChange={(event) => onMove(entry.item, event.target.value as PipelineStatus)}
+                      aria-label={`Move ${entry.item.title}`}
+                    >
+                      {pipelineColumns.map((option) => (
+                        <option value={option.value} key={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </article>
+                ))}
+                {!items.length && <div className="pipeline-empty">Nothing here yet.</div>}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -385,6 +642,12 @@ export default function App() {
   const [detail, setDetail] = useState<WorkItem | null>(null);
   const [saved, setSaved] = useState<WorkItem[]>(() => readStored(STORAGE.saved, []));
   const [recent, setRecent] = useState<RecentSearch[]>(() => readStored(STORAGE.recent, []));
+  const [watches, setWatches] = useState<WatchSummary[]>([]);
+  const [watchMatches, setWatchMatches] = useState<WatchMatch[]>([]);
+  const [selectedWatchId, setSelectedWatchId] = useState<string | null>(null);
+  const [watchBusyId, setWatchBusyId] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineEntry[]>([]);
+  const [productMessage, setProductMessage] = useState("");
 
   useEffect(() => {
     fetch(apiUrl("/api/meta"))
@@ -404,6 +667,27 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE.recent, JSON.stringify(recent));
   }, [recent]);
+
+  async function loadWatches() {
+    const response = await apiFetch("/api/watches");
+    if (!response.ok) return;
+    const body = await response.json() as { items: WatchSummary[] };
+    setWatches(body.items || []);
+  }
+
+  async function loadPipeline() {
+    const response = await apiFetch("/api/pipeline");
+    if (!response.ok) return;
+    const body = await response.json() as { items: PipelineEntry[] };
+    setPipeline(body.items || []);
+  }
+
+  useEffect(() => {
+    void Promise.all([
+      loadWatches().catch(() => undefined),
+      loadPipeline().catch(() => undefined),
+    ]);
+  }, []);
 
   async function runSearch(nextQuery = query, overrides?: Partial<RecentSearch>) {
     const finalQuery = (overrides?.query ?? nextQuery).trim();
@@ -486,9 +770,103 @@ export default function App() {
   }
 
   function toggleSave(item: WorkItem) {
-    setSaved((current) => current.some((savedItem) => savedItem.id === item.id)
+    const alreadySaved = saved.some((savedItem) => savedItem.id === item.id);
+    setSaved((current) => alreadySaved
       ? current.filter((savedItem) => savedItem.id !== item.id)
       : [item, ...current]);
+
+    if (!alreadySaved && !pipeline.some((entry) => entry.item.id === item.id)) {
+      void updatePipeline(item, "saved");
+    }
+  }
+
+  async function createCurrentWatch() {
+    if (!searched) return;
+    setProductMessage("");
+    const response = await apiFetch("/api/watches", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: searched,
+        query: searched,
+        country,
+        countryLabel: countryNames[country] || country,
+        hours,
+        types,
+      }),
+    });
+    if (!response.ok) {
+      setProductMessage("Could not create this watch.");
+      return;
+    }
+    const result = await response.json() as { existing?: boolean };
+    await loadWatches();
+    setProductMessage(
+      result.existing
+        ? "You are already watching this search."
+        : "Scout Watch created. WorkScout will check it about every 6 hours.",
+    );
+  }
+
+  async function openWatch(id: string) {
+    setWatchBusyId(id);
+    try {
+      const response = await apiFetch(`/api/watches/${encodeURIComponent(id)}/matches`);
+      if (!response.ok) return;
+      const body = await response.json() as { items: WatchMatch[] };
+      setWatchMatches(body.items || []);
+      setSelectedWatchId(id);
+      setView("watches");
+      await apiFetch(`/api/watches/${encodeURIComponent(id)}/read`, { method: "POST" });
+      await loadWatches();
+    } finally {
+      setWatchBusyId(null);
+    }
+  }
+
+  async function runWatch(id: string) {
+    setWatchBusyId(id);
+    setProductMessage("");
+    try {
+      const response = await apiFetch(`/api/watches/${encodeURIComponent(id)}/run`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        setProductMessage("This watch could not be refreshed.");
+        return;
+      }
+      await loadWatches();
+      if (selectedWatchId === id) await openWatch(id);
+    } finally {
+      setWatchBusyId(null);
+    }
+  }
+
+  async function removeWatch(id: string) {
+    await apiFetch(`/api/watches/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (selectedWatchId === id) {
+      setSelectedWatchId(null);
+      setWatchMatches([]);
+    }
+    await loadWatches();
+  }
+
+  async function updatePipeline(item: WorkItem, status: PipelineStatus) {
+    const existing = pipeline.find((entry) => entry.item.id === item.id);
+    const response = await apiFetch("/api/pipeline", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        item,
+        status,
+        notes: existing?.notes || "",
+      }),
+    });
+    if (!response.ok) {
+      setProductMessage("Could not update the application pipeline.");
+      return;
+    }
+    await loadPipeline();
   }
 
   function handlePosted(nextQuery: string) {
@@ -513,6 +891,19 @@ export default function App() {
 
         <nav className="main-nav" aria-label="Main navigation">
           <button className={view === "explore" ? "active" : ""} onClick={() => setView("explore")}>Explore</button>
+          <button className={view === "watches" ? "active" : ""} onClick={() => {
+            setSelectedWatchId(null);
+            setView("watches");
+            void loadWatches();
+          }}>
+            Watches <span>{watches.reduce((sum, watch) => sum + watch.newCount, 0)}</span>
+          </button>
+          <button className={view === "pipeline" ? "active" : ""} onClick={() => {
+            setView("pipeline");
+            void loadPipeline();
+          }}>
+            Pipeline <span>{pipeline.length}</span>
+          </button>
           <button className={view === "saved" ? "active" : ""} onClick={() => setView("saved")}>
             Saved <span>{saved.length}</span>
           </button>
@@ -524,6 +915,13 @@ export default function App() {
       </header>
 
       <main>
+        {productMessage && (
+          <div className="product-message" role="status">
+            <span>{productMessage}</span>
+            <button onClick={() => setProductMessage("")} aria-label="Dismiss">×</button>
+          </div>
+        )}
+
         {view === "explore" && (
           <section className={`hero ${hasSearched ? "searched-hero" : ""}`}>
             <div className="hero-copy-wrap">
@@ -619,10 +1017,15 @@ export default function App() {
                 <p>{searched ? <>For <strong>{searched}</strong></> : "Describe what you can do to start."}</p>
               </div>
               {data && (
-                <div className="result-stats">
-                  <div><strong>{stats.leads}</strong><span>direct leads</span></div>
-                  <div><strong>{stats.eligible}</strong><span>look eligible</span></div>
-                  <div><strong>{stats.fresh}</strong><span>≤7 days old</span></div>
+                <div className="result-head-actions">
+                  <button className="watch-search-button" onClick={() => void createCurrentWatch()}>
+                    + Watch this search
+                  </button>
+                  <div className="result-stats">
+                    <div><strong>{stats.leads}</strong><span>direct leads</span></div>
+                    <div><strong>{stats.eligible}</strong><span>look eligible</span></div>
+                    <div><strong>{stats.fresh}</strong><span>≤7 days old</span></div>
+                  </div>
                 </div>
               )}
             </div>
@@ -693,6 +1096,33 @@ export default function App() {
           </section>
         )}
 
+        {view === "watches" && (
+          <WatchPage
+            watches={watches}
+            selectedWatchId={selectedWatchId}
+            matches={watchMatches}
+            busyId={watchBusyId}
+            onOpen={(id) => void openWatch(id)}
+            onRun={(id) => void runWatch(id)}
+            onDelete={(id) => void removeWatch(id)}
+            onBack={() => {
+              setSelectedWatchId(null);
+              setWatchMatches([]);
+            }}
+            saved={saved}
+            onToggleSave={toggleSave}
+            onOpenItem={setDetail}
+          />
+        )}
+
+        {view === "pipeline" && (
+          <PipelinePage
+            entries={pipeline}
+            onOpen={setDetail}
+            onMove={(item, status) => void updatePipeline(item, status)}
+          />
+        )}
+
         {view === "saved" && (
           <section className="saved-page">
             <div className="saved-head">
@@ -753,8 +1183,10 @@ export default function App() {
         <DetailModal
           item={detail}
           saved={saved.some((savedItem) => savedItem.id === detail.id)}
+          pipelineStatus={pipeline.find((entry) => entry.item.id === detail.id)?.status}
           onClose={() => setDetail(null)}
           onToggleSave={toggleSave}
+          onPipelineStatus={(item, status) => void updatePipeline(item, status)}
         />
       )}
     </div>
