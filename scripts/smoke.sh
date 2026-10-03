@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /home/samyao/work/workscout
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 source /home/samyao/.nvm/nvm.sh
 nvm use 24 >/dev/null
 
