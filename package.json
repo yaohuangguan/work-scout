@@ -30,5 +30,14 @@
     "vite": "^8.3.2",
     "vitest": "^5.0.3",
     "wrangler": "^4.147.0"
+  },
+  "description": "Find remote work you can actually take.",
+  "homepage": "https://workscout.nzs.workers.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yaohuangguan/work-scout.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yaohuangguan/work-scout/issues"
   }
 }

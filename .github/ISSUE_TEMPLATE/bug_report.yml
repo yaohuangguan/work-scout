@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in WorkScout
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve WorkScout. Please do not include secrets or private user data.
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      placeholder: Search, source adapter, eligibility, saved items, posting, UI...
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Tell us what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Search for ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshot, logs, or example URL
+      description: Remove tokens, email addresses, private data, and credentials before posting.
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Production site
+        - Local development
+        - Both
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed secrets and private data from this report.
+          required: true
