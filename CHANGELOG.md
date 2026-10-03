@@ -2,6 +2,21 @@
 
 All notable product changes are tracked here.
 
+## Unreleased
+
+### Changed
+
+- replaced the Hono API runtime with OpenMesh 0.5 inside the existing Cloudflare Worker
+- kept Cloudflare D1 and static ASSETS bindings unchanged
+- added typed OpenMesh request validation, body parsing, middleware, and error handling
+- registered the D1 binding through `openmesh-node/db`
+- bridged Worker requests into OpenMesh through Cloudflare's `node:http` compatibility and `cloudflare:node`
+- added Wrangler runtime type generation to TypeScript verification
+- kept the existing `/api/*` contract and deployment path
+- preserved honeypot behavior under typed validation
+- made smoke verification deterministic in CI by allowing external sources to be disabled
+- added a real OpenMesh control-plane/service-discovery integration test covering registration, `app.mesh()`, traffic targeting, and request-context propagation
+
 ## [0.1.0] - 2026-10-03
 
 First public product release.

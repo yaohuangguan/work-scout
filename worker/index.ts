@@ -1,41 +1,97 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { communityRowToItem, dedupeWorkItems, planQuery, searchExternal, type SearchPreferences } from "./search";
+import { createServer } from "node:http";
+import { handleAsNodeRequest } from "cloudflare:node";
+import { env } from "cloudflare:workers";
+import openmesh, { HttpError, created, reply } from "openmesh-node";
+import { database } from "openmesh-node/db";
+import { bodyParser } from "openmesh-node/plugins";
+import {
+  communityRowToItem,
+  dedupeWorkItems,
+  planQuery,
+  searchExternal,
+  type SearchPreferences,
+} from "./search";
+import {
+  PostInputSchema,
+  SearchQuerySchema,
+  objectSchema,
+  type PostInput,
+} from "./contracts";
 
-type Env = {
-  Bindings: {
-    DB?: any;
-    ASSETS?: any;
-  };
-};
+const OPENMESH_PORT = 8787;
+const EXTERNAL_SOURCES = [
+  "Reddit r/forhire",
+  "HN Freelance",
+  "Himalayas",
+  "Remote OK",
+  "Remotive",
+] as const;
 
-const app = new Hono<Env>();
-app.use("/api/*", cors());
-
-function parsePrefs(url: URL): SearchPreferences {
-  const raw = (url.searchParams.get("q") || "").trim() || "remote";
-  const countryCode = (url.searchParams.get("country") || "ANY").toUpperCase();
-  const countryLabel = url.searchParams.get("countryLabel") || (countryCode === "ANY" ? "Anywhere / not sure" : countryCode);
-  const hours = Number(url.searchParams.get("hours") || "20");
-  const types = (url.searchParams.get("types") || "contract,part-time,gig")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-
-  return {
-    raw,
-    countryCode,
-    countryLabel,
-    hoursPerWeek: Number.isFinite(hours) ? Math.max(1, Math.min(80, hours)) : 20,
-    workTypes: types,
-  };
+function externalSearchEnabled() {
+  const value = String(
+    (env as unknown as { WORKSCOUT_EXTERNAL_SEARCH?: string })
+      .WORKSCOUT_EXTERNAL_SEARCH ?? "true",
+  ).toLowerCase();
+  return value !== "false" && value !== "0" && value !== "off";
 }
 
-async function getCommunity(db: any, prefs: SearchPreferences) {
-  if (!db) return [];
+const db = database(env.DB, {
+  name: "workscout-d1",
+});
+
+const app = openmesh()
+  .use(bodyParser())
+  .register(db);
+
+app.use(async (ctx, next) => {
+  ctx.set("access-control-allow-origin", "*");
+  ctx.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  ctx.set("access-control-allow-headers", "content-type");
+
+  const cf = (ctx.req as typeof ctx.req & {
+    cloudflare?: { cf?: { country?: string } };
+  }).cloudflare?.cf;
+
+  ctx.state.country = String(cf?.country || "").toUpperCase();
+
+  const forwarded = String(
+    ctx.get("cf-connecting-ip")
+      || ctx.get("x-forwarded-for")
+      || "local",
+  );
+  ctx.state.clientAddress = forwarded.split(",")[0]?.trim() || "local";
+
+  if (ctx.method === "OPTIONS") {
+    ctx.status = 204;
+    return;
+  }
+
+  await next();
+});
+
+app.setErrorHandler((error, ctx) => {
+  if (error instanceof HttpError) {
+    ctx.status = error.statusCode;
+    return {
+      error: error.expose ? error.message : "Request failed.",
+    };
+  }
+
+  console.error(error);
+  ctx.status = 500;
+  return { error: "Internal server error." };
+});
+
+function communityDb() {
+  return db.client;
+}
+
+async function getCommunity(prefs: SearchPreferences) {
   const plan = planQuery(prefs.raw);
   const terms = plan.terms.slice(0, 6);
-  const like = terms.map(() => "(lower(title) LIKE ? OR lower(description) LIKE ? OR lower(skills) LIKE ?)").join(" OR ");
+  const like = terms
+    .map(() => "(lower(title) LIKE ? OR lower(description) LIKE ? OR lower(skills) LIKE ?)")
+    .join(" OR ");
   const sql = terms.length
     ? `SELECT * FROM posts WHERE status = 'active' AND (${like}) ORDER BY created_at DESC LIMIT 40`
     : "SELECT * FROM posts WHERE status = 'active' ORDER BY created_at DESC LIMIT 40";
@@ -43,121 +99,201 @@ async function getCommunity(db: any, prefs: SearchPreferences) {
     const value = `%${term.toLowerCase()}%`;
     return [value, value, value];
   });
-  const result = await db.prepare(sql).bind(...args).all();
-  return (result.results || []).map((row: any) => communityRowToItem(row, prefs, plan.terms));
+
+  const result = await communityDb().prepare(sql).bind(...args).all();
+  return (result.results || []).map((row) =>
+    communityRowToItem(row, prefs, plan.terms)
+  );
 }
 
-app.get("/api/health", (c) =>
-  c.json({
-    ok: true,
-    service: "workscout",
-    now: new Date().toISOString(),
-    sources: ["Reddit r/forhire", "HN Freelance", "Himalayas", "Remote OK", "Remotive", "WorkScout Community"],
-  })
-);
+async function fingerprintFor(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
-app.get("/api/meta", (c) => {
-  const request = c.req.raw as Request & { cf?: { country?: string } };
-  const detected = String(request.cf?.country || "").toUpperCase();
+app.get("/api/health", {
+  response: objectSchema<Record<string, unknown>>("health response"),
+}, async () => ({
+  ok: await db.healthy(),
+  service: "workscout",
+  runtime: "openmesh-worker",
+  database: db.state,
+  now: new Date().toISOString(),
+  sources: [
+    ...EXTERNAL_SOURCES,
+    "WorkScout Community",
+  ],
+}));
+
+app.get("/api/meta", {
+  response: objectSchema<{ country: string }>("metadata response"),
+}, async ({ state }) => {
+  const detected = typeof state.country === "string" ? state.country : "";
   const supported = new Set(["NZ", "AU", "US", "CA", "GB"]);
-  return c.json({ country: supported.has(detected) ? detected : "ANY" });
+  return { country: supported.has(detected) ? detected : "ANY" };
 });
 
-app.get("/api/search", async (c) => {
-  const prefs = parsePrefs(new URL(c.req.url));
+app.get("/api/search", {
+  query: SearchQuerySchema,
+  response: objectSchema<Record<string, unknown>>("search response"),
+}, async ({ query }) => {
   const [external, community] = await Promise.all([
-    searchExternal(prefs),
-    getCommunity(c.env.DB, prefs).catch(() => []),
+    externalSearchEnabled()
+      ? searchExternal(query)
+      : Promise.resolve({
+          plan: planQuery(query.raw),
+          items: [],
+          sources: EXTERNAL_SOURCES.map((name) => ({
+            name,
+            ok: false,
+            count: 0,
+            error: "External search disabled",
+          })),
+        }),
+    getCommunity(query).catch(() => []),
   ]);
 
-  const items = dedupeWorkItems([...community, ...external.items])
+  const items = dedupeWorkItems([
+    ...community,
+    ...external.items,
+  ])
     .sort((a, b) => b.score - a.score)
     .slice(0, 100);
 
-  return c.json({
-    query: prefs,
+  return {
+    query,
     plan: external.plan,
     count: items.length,
     items,
     sources: [
       ...external.sources,
-      { name: "WorkScout Community", ok: Boolean(c.env.DB), count: community.length, error: c.env.DB ? null : "D1 not bound" },
+      {
+        name: "WorkScout Community",
+        ok: true,
+        count: community.length,
+        error: null,
+      },
     ],
-  });
+  };
 });
 
-async function fingerprintFor(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-app.post("/api/posts", async (c) => {
-  if (!c.env.DB) return c.json({ error: "Posting database is not configured." }, 503);
-
-  const body = await c.req.json().catch(() => null) as any;
-  if (!body) return c.json({ error: "Invalid JSON body." }, 400);
-  if (String(body.website || "").trim()) return c.json({ ok: true }, 201);
-
-  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "local";
-  const fingerprint = await fingerprintFor(`workscout:v1:${ip}`);
-  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const recent = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM post_events WHERE fingerprint = ? AND created_at >= ?"
-  ).bind(fingerprint, cutoff).first();
-
-  if (Number(recent?.count || 0) >= 4) {
-    return c.json({ error: "Too many posts from this connection. Try again later." }, 429);
+app.post("/api/posts", {
+  body: PostInputSchema,
+  response: {
+    201: objectSchema<Record<string, unknown>>("created post"),
+    429: objectSchema<{ error: string }>("rate limit"),
+  },
+}, async ({ body, state }) => {
+  if (String(body.website || "").trim()) {
+    return created({ ok: true });
   }
 
-  const title = String(body.title || "").trim();
-  const company = String(body.company || "").trim() || "Independent";
-  const description = String(body.description || "").trim();
-  const contact = String(body.contact || "").trim();
-  const skills = Array.isArray(body.skills) ? body.skills.join(",") : String(body.skills || "");
-  const workType = String(body.workType || "Contract").trim();
-  const locationScope = String(body.locationScope || "Worldwide").trim();
-  const budget = String(body.budget || "").trim();
+  const clientAddress = typeof state.clientAddress === "string"
+    ? state.clientAddress
+    : "local";
+  const fingerprint = await fingerprintFor(`workscout:v1:${clientAddress}`);
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-  if (title.length < 3 || title.length > 120) return c.json({ error: "Title must be 3–120 characters." }, 400);
-  if (description.length < 20 || description.length > 3000) return c.json({ error: "Description must be 20–3000 characters." }, 400);
-  if (contact.length < 5 || contact.length > 300) return c.json({ error: "Add an email or application URL." }, 400);
-  if (!contact.includes("@") && !/^https?:\/\//i.test(contact)) return c.json({ error: "Contact must be an email or http(s) URL." }, 400);
+  const recent = await communityDb().prepare(
+    "SELECT COUNT(*) AS count FROM post_events WHERE fingerprint = ? AND created_at >= ?",
+  ).bind(fingerprint, cutoff).first<{ count?: number }>();
+
+  if (Number(recent?.count || 0) >= 4) {
+    return reply(429, {
+      error: "Too many posts from this connection. Try again later.",
+    });
+  }
 
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
+  const company = body.company || "Independent";
+  const skills = Array.isArray(body.skills)
+    ? body.skills.join(",")
+    : String(body.skills || "");
 
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO posts (id, title, company, description, skills, work_type, location_scope, contact, budget, created_at, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
-    ).bind(id, title, company, description, skills, workType, locationScope, contact, budget, createdAt),
-    c.env.DB.prepare(
-      "INSERT INTO post_events (fingerprint, created_at) VALUES (?, ?)"
+  await communityDb().batch([
+    communityDb().prepare(
+      `INSERT INTO posts
+       (id, title, company, description, skills, work_type, location_scope, contact, budget, created_at, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+    ).bind(
+      id,
+      body.title,
+      company,
+      body.description,
+      skills,
+      body.workType || "Contract",
+      body.locationScope || "Worldwide",
+      body.contact,
+      body.budget || "",
+      createdAt,
+    ),
+    communityDb().prepare(
+      "INSERT INTO post_events (fingerprint, created_at) VALUES (?, ?)",
     ).bind(fingerprint, createdAt),
   ]);
 
-  c.executionCtx.waitUntil(
-    c.env.DB.prepare("DELETE FROM post_events WHERE created_at < ?")
-      .bind(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
-      .run()
-      .catch(() => undefined)
-  );
+  await communityDb().prepare(
+    "DELETE FROM post_events WHERE created_at < ?",
+  ).bind(
+    new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+  ).run().catch(() => undefined);
 
-  return c.json({ ok: true, id, createdAt }, 201);
+  return created({ ok: true, id, createdAt });
 });
 
-app.get("/api/posts", async (c) => {
-  if (!c.env.DB) return c.json({ items: [] });
-  const result = await c.env.DB.prepare(
-    "SELECT id, title, company, description, skills, work_type, location_scope, budget, created_at FROM posts WHERE status = 'active' ORDER BY created_at DESC LIMIT 50"
+app.get("/api/posts", {
+  response: objectSchema<{ items: unknown[] }>("post list"),
+}, async () => {
+  const result = await communityDb().prepare(
+    `SELECT id, title, company, description, skills, work_type, location_scope, budget, created_at
+     FROM posts
+     WHERE status = 'active'
+     ORDER BY created_at DESC
+     LIMIT 50`,
   ).all();
-  return c.json({ items: result.results || [] });
+
+  return { items: result.results || [] };
 });
 
-app.all("*", async (c) => {
-  if (!c.env.ASSETS) return c.text("WorkScout API", 200);
-  return c.env.ASSETS.fetch(c.req.raw);
-});
+let readyPromise: Promise<void> | null = null;
+let listener: ReturnType<typeof app.callback> | null = null;
 
-export default app;
+const server = createServer((req, res) => {
+  if (!listener) {
+    res.statusCode = 503;
+    res.end("WorkScout API is starting");
+    return;
+  }
+  listener(req, res);
+});
+server.listen(OPENMESH_PORT);
+
+async function ensureReady() {
+  if (!readyPromise) {
+    readyPromise = app.ready().then(() => {
+      listener = app.callback();
+    });
+  }
+  return readyPromise;
+}
+
+export default {
+  async fetch(
+    request: Request,
+    _workerEnv: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname.startsWith("/api/")) {
+      await ensureReady();
+      return handleAsNodeRequest(OPENMESH_PORT, request, env, ctx);
+    }
+
+    return env.ASSETS.fetch(request);
+  },
+};

@@ -59,6 +59,9 @@ const STORAGE = {
   recent: "workscout:recent:v1",
 };
 
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const apiUrl = (path: string) => `${API_BASE}${path}`;
+
 const countryNames: Record<string, string> = {
   ANY: "Anywhere / not sure",
   NZ: "New Zealand",
@@ -270,12 +273,12 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: (quer
     event.preventDefault();
     setState("saving");
     setError("");
-    const response = await fetch("/api/posts", {
+    const response = await fetch(apiUrl("/api/posts"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(form),
     });
-    const data = await response.json();
+    const data = await response.json() as { error?: string };
     if (!response.ok) {
       setState("idle");
       setError(data.error || "Could not publish this work.");
@@ -384,8 +387,10 @@ export default function App() {
   const [recent, setRecent] = useState<RecentSearch[]>(() => readStored(STORAGE.recent, []));
 
   useEffect(() => {
-    fetch("/api/meta")
-      .then((response) => response.ok ? response.json() : null)
+    fetch(apiUrl("/api/meta"))
+      .then((response) => response.ok
+        ? response.json() as Promise<{ country?: string }>
+        : null)
       .then((meta) => {
         if (meta?.country && countryNames[meta.country]) setCountry(meta.country);
       })
@@ -419,7 +424,7 @@ export default function App() {
     });
 
     try {
-      const response = await fetch(`/api/search?${params}`);
+      const response = await fetch(apiUrl(`/api/search?${params}`));
       if (!response.ok) throw new Error("Search failed");
       const body = await response.json() as SearchResponse;
       setData(body);
