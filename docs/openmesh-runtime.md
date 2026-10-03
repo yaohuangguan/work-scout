@@ -64,9 +64,9 @@ This is intentionally a real consumer of OpenMesh 0.5 rather than a framework de
 
 ## Database boundary
 
-The community service currently uses Node's built-in `node:sqlite` so the OpenMesh backend is self-contained locally and does not need another database dependency.
+The community service uses Node's built-in `node:sqlite` by default for local development. If `DATABASE_URL` is present, the same repository boundary switches to Postgres through `pg`.
 
-The business routes do not depend on SQLite directly:
+The business routes do not depend on either database directly:
 
 ```text
 community route
@@ -75,7 +75,7 @@ community route
             -> node:sqlite
 ```
 
-That boundary is intentional. A later production migration can replace `CommunityDatabase` with Prisma, Drizzle, Kysely, TypeORM, a Postgres client or another adapter without changing the gateway or public API.
+That boundary is intentional. The current implementation already supports SQLite and Postgres without changing routes. Prisma, Drizzle, Kysely, TypeORM or another ORM can replace the store behind the same interface later without changing the gateway or public API.
 
 The original Cloudflare deployment still uses D1 through the legacy Worker.
 
@@ -148,4 +148,4 @@ Cloudflare/static frontend
             -> production database
 ```
 
-The next production step is to choose the Node hosting target and production persistence backend, then route `/api/*` to the OpenMesh gateway. Until that cutover, `npm run deploy` continues deploying the existing Worker safely.
+The next production step is to choose the Node hosting target, provide `DATABASE_URL` when Postgres is desired, and route `/api/*` to the OpenMesh gateway. The frontend can point at a separate API origin through `VITE_API_BASE`. Until that cutover, `npm run deploy` continues deploying the existing Worker safely.

@@ -46,7 +46,7 @@ export function createCommunityService({
       ttl: 15_000,
       metadata: {
         version: "v1",
-        storage: "sqlite",
+        storage: db.client.kind,
       },
       url: (address) => addressUrl(address),
     }))
@@ -55,8 +55,8 @@ export function createCommunityService({
       response: jsonObjectSchema<CommunitySearchResponse>("community search response"),
     }, async ({ body }) => {
       const plan = planQuery(body.raw);
-      const items = db.client.searchRows(body)
-        .map((row) => communityRowToItem(row, body, plan.terms));
+      const rows = await db.client.searchRows(body);
+      const items = rows.map((row) => communityRowToItem(row, body, plan.terms));
 
       return {
         items,
@@ -80,12 +80,12 @@ export function createCommunityService({
       const createdAt = new Date(now).toISOString();
 
       const result = await db.resource.transaction(async (store) => {
-        if (store.recentPostCount(body.fingerprint, cutoff) >= 4) {
+        if (await store.recentPostCount(body.fingerprint, cutoff) >= 4) {
           return null;
         }
 
         const id = randomUUID();
-        store.insertPost(body.post, body.fingerprint, id, createdAt);
+        await store.insertPost(body.post, body.fingerprint, id, createdAt);
         return { ok: true as const, id, createdAt };
       });
 
@@ -96,11 +96,11 @@ export function createCommunityService({
       }
 
       setImmediate(() => {
-        try {
+        void Promise.resolve(
           db.client.cleanupEvents(
             new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-          );
-        } catch {}
+          ),
+        ).catch(() => {});
       });
 
       return created(result);
@@ -108,7 +108,7 @@ export function createCommunityService({
     .get("/posts", {
       response: jsonObjectSchema<{ items: ReturnType<typeof db.client.listPosts> }>("post list"),
     }, async () => ({
-      items: db.client.listPosts(),
+      items: await db.client.listPosts(),
     }))
     .get("/health", async () => ({
       ok: await db.resource.healthy(),
