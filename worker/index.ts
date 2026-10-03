@@ -3,27 +3,31 @@ import { handleAsNodeRequest } from "cloudflare:node";
 import openmesh, { HttpError, created, reply } from "openmesh-node";
 import { database } from "openmesh-node/db";
 import { bodyParser } from "openmesh-node/plugins";
+import { type SearchPreferences } from "./search";
 import {
-  communityRowToItem,
-  dedupeWorkItems,
-  planQuery,
-  searchExternal,
-  type SearchPreferences,
-} from "./search";
+  EXTERNAL_SOURCES,
+  createWatch,
+  deletePipeline,
+  deleteWatch,
+  getWatch,
+  listPipeline,
+  listWatchMatches,
+  listWatches,
+  markWatchViewed,
+  refreshDueWatches,
+  refreshWatch,
+  searchAll,
+  upsertPipeline,
+} from "./productivity";
 import {
+  PipelineStatusSchema,
   PostInputSchema,
   SearchQuerySchema,
+  WatchInputSchema,
   objectSchema,
 } from "./contracts";
 
 const OPENMESH_PORT = 8787;
-const EXTERNAL_SOURCES = [
-  "Reddit r/forhire",
-  "HN Freelance",
-  "Himalayas",
-  "Remote OK",
-  "Remotive",
-] as const;
 
 type RuntimeEnv = Env & {
   WORKSCOUT_EXTERNAL_SEARCH?: string;
@@ -51,7 +55,10 @@ function createRuntime(workerEnv: RuntimeEnv) {
   app.use(async (ctx, next) => {
     ctx.set("access-control-allow-origin", "*");
     ctx.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    ctx.set("access-control-allow-headers", "content-type");
+    ctx.set(
+      "access-control-allow-headers",
+      "content-type,x-workscout-client",
+    );
 
     const cf = (ctx.req as typeof ctx.req & {
       cloudflare?: { cf?: { country?: string } };
@@ -65,6 +72,11 @@ function createRuntime(workerEnv: RuntimeEnv) {
         || "local",
     );
     ctx.state.clientAddress = forwarded.split(",")[0]?.trim() || "local";
+
+    const clientKey = String(ctx.get("x-workscout-client") || "").trim();
+    ctx.state.clientHash = clientKey.length >= 16 && clientKey.length <= 160
+      ? await fingerprintFor(`workscout:client:${clientKey}`)
+      : null;
 
     if (ctx.method === "OPTIONS") {
       ctx.status = 204;
@@ -91,24 +103,14 @@ function createRuntime(workerEnv: RuntimeEnv) {
     return db.client;
   }
 
-  async function getCommunity(prefs: SearchPreferences) {
-    const plan = planQuery(prefs.raw);
-    const terms = plan.terms.slice(0, 6);
-    const like = terms
-      .map(() => "(lower(title) LIKE ? OR lower(description) LIKE ? OR lower(skills) LIKE ?)")
-      .join(" OR ");
-    const sql = terms.length
-      ? `SELECT * FROM posts WHERE status = 'active' AND (${like}) ORDER BY created_at DESC LIMIT 40`
-      : "SELECT * FROM posts WHERE status = 'active' ORDER BY created_at DESC LIMIT 40";
-    const args = terms.flatMap((term) => {
-      const value = `%${term.toLowerCase()}%`;
-      return [value, value, value];
-    });
-
-    const result = await communityDb().prepare(sql).bind(...args).all();
-    return (result.results || []).map((row) =>
-      communityRowToItem(row, prefs, plan.terms)
-    );
+  function requireClientHash(state: Record<string, unknown>) {
+    const clientHash = typeof state.clientHash === "string"
+      ? state.clientHash
+      : "";
+    if (!clientHash) {
+      throw new HttpError(400, "A WorkScout client key is required.");
+    }
+    return clientHash;
   }
 
   app.get("/api/health", {
@@ -136,46 +138,12 @@ function createRuntime(workerEnv: RuntimeEnv) {
   app.get("/api/search", {
     query: SearchQuerySchema,
     response: objectSchema<Record<string, unknown>>("search response"),
-  }, async ({ query }) => {
-    const [external, community] = await Promise.all([
-      externalSearchEnabled(workerEnv)
-        ? searchExternal(query)
-        : Promise.resolve({
-            plan: planQuery(query.raw),
-            items: [],
-            sources: EXTERNAL_SOURCES.map((name) => ({
-              name,
-              ok: false,
-              count: 0,
-              error: "External search disabled",
-            })),
-          }),
-      getCommunity(query).catch(() => []),
-    ]);
-
-    const items = dedupeWorkItems([
-      ...community,
-      ...external.items,
-    ])
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 100);
-
-    return {
+  }, async ({ query }) =>
+    searchAll(
+      communityDb(),
       query,
-      plan: external.plan,
-      count: items.length,
-      items,
-      sources: [
-        ...external.sources,
-        {
-          name: "WorkScout Community",
-          ok: true,
-          count: community.length,
-          error: null,
-        },
-      ],
-    };
-  });
+      externalSearchEnabled(workerEnv),
+    ));
 
   app.post("/api/posts", {
     body: PostInputSchema,
@@ -256,6 +224,112 @@ function createRuntime(workerEnv: RuntimeEnv) {
     return { items: result.results || [] };
   });
 
+  app.get("/api/watches", {
+    response: objectSchema<{ items: unknown[] }>("watch list"),
+  }, async ({ state }) => ({
+    items: await listWatches(
+      communityDb(),
+      requireClientHash(state),
+    ),
+  }));
+
+  app.post("/api/watches", {
+    body: WatchInputSchema,
+    response: {
+      201: objectSchema<Record<string, unknown>>("created watch"),
+    },
+  }, async ({ body, state }) =>
+    created(await createWatch(
+      communityDb(),
+      requireClientHash(state),
+      body,
+      externalSearchEnabled(workerEnv),
+    )));
+
+  app.post("/api/watches/:id/run", {
+    response: objectSchema<Record<string, unknown>>("watch refresh"),
+  }, async ({ params, state }) => {
+    const clientHash = requireClientHash(state);
+    const row = await getWatch(
+      communityDb(),
+      clientHash,
+      params.id,
+    );
+    if (!row) throw new HttpError(404, "Watch not found.");
+
+    return refreshWatch(communityDb(), row, {
+      externalEnabled: externalSearchEnabled(workerEnv),
+    });
+  });
+
+  app.get("/api/watches/:id/matches", {
+    response: objectSchema<Record<string, unknown>>("watch matches"),
+  }, async ({ params, state }) => {
+    const result = await listWatchMatches(
+      communityDb(),
+      requireClientHash(state),
+      params.id,
+    );
+    if (!result) throw new HttpError(404, "Watch not found.");
+    return result;
+  });
+
+  app.post("/api/watches/:id/read", {
+    response: objectSchema<{ ok: boolean }>("watch read"),
+  }, async ({ params, state }) => {
+    const ok = await markWatchViewed(
+      communityDb(),
+      requireClientHash(state),
+      params.id,
+    );
+    if (!ok) throw new HttpError(404, "Watch not found.");
+    return { ok: true };
+  });
+
+  app.delete("/api/watches/:id", {
+    response: objectSchema<{ ok: boolean }>("deleted watch"),
+  }, async ({ params, state }) => {
+    const ok = await deleteWatch(
+      communityDb(),
+      requireClientHash(state),
+      params.id,
+    );
+    if (!ok) throw new HttpError(404, "Watch not found.");
+    return { ok: true };
+  });
+
+  app.get("/api/pipeline", {
+    response: objectSchema<{ items: unknown[] }>("pipeline list"),
+  }, async ({ state }) => ({
+    items: await listPipeline(
+      communityDb(),
+      requireClientHash(state),
+    ),
+  }));
+
+  app.post("/api/pipeline", {
+    body: PipelineStatusSchema,
+    response: objectSchema<Record<string, unknown>>("pipeline upsert"),
+  }, async ({ body, state }) =>
+    upsertPipeline(
+      communityDb(),
+      requireClientHash(state),
+      body.item,
+      body.status,
+      body.notes,
+    ));
+
+  app.delete("/api/pipeline/:id", {
+    response: objectSchema<{ ok: boolean }>("pipeline delete"),
+  }, async ({ params, state }) => {
+    await deletePipeline(
+      communityDb(),
+      requireClientHash(state),
+      params.id,
+    );
+    return { ok: true };
+  });
+
   return { app, db };
 }
 
@@ -318,5 +392,21 @@ export default {
     }
 
     return runtimeEnv.ASSETS.fetch(request);
+  },
+
+  async scheduled(
+    _controller: ScheduledController,
+    workerEnv: Env,
+    ctx: ExecutionContext,
+  ) {
+    const runtimeEnv = workerEnv as RuntimeEnv;
+    ctx.waitUntil(
+      refreshDueWatches(runtimeEnv.DB, {
+        limit: 8,
+        externalEnabled: externalSearchEnabled(runtimeEnv),
+      }).then((summary) => {
+        console.log("WorkScout Scout Watch refresh", summary);
+      }),
+    );
   },
 };

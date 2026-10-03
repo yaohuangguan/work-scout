@@ -125,7 +125,104 @@ assert all('contact' not in item for item in d['items'])
 print('posts=', len(d['items']))
 PY
 
+CLIENT_KEY="smoke-client-$NEEDLE"
+export CLIENT_KEY
+
+python3 - <<'PY'
+import json, os
+watch = {
+  "label": "Smoke watch",
+  "query": os.environ["NEEDLE"],
+  "country": "NZ",
+  "countryLabel": "New Zealand",
+  "hours": 20,
+  "types": ["contract", "part-time", "gig"]
+}
+with open('/tmp/workscout-watch-payload.json', 'w') as f:
+    json.dump(watch, f)
+
+with open('/tmp/workscout-community.json') as f:
+    search=json.load(f)
+item=next(x for x in search["items"] if x.get("source") == "WorkScout")
+with open('/tmp/workscout-pipeline-payload.json', 'w') as f:
+    json.dump({"item": item, "status": "applied", "notes": "Smoke pipeline"}, f)
+PY
+
+echo "CREATE_WATCH:"
+curl -fsS --max-time 30 -X POST \
+  -H "content-type: application/json" \
+  -H "x-workscout-client: $CLIENT_KEY" \
+  --data-binary @/tmp/workscout-watch-payload.json \
+  http://127.0.0.1:8787/api/watches >/tmp/workscout-watch.json
+cat /tmp/workscout-watch.json
+echo
+
+WATCH_ID="$(python3 -c 'import json; print(json.load(open("/tmp/workscout-watch.json"))["id"])')"
+
+SECOND_TITLE="Second OpenMesh Watch smoke $NEEDLE"
+export SECOND_TITLE
+python3 - <<'PY'
+import json, os
+payload = {
+  "title": os.environ["SECOND_TITLE"],
+  "company": "WorkScout QA",
+  "description": "A second deterministic opportunity created after the Scout Watch baseline.",
+  "skills": os.environ["NEEDLE"] + ", React",
+  "workType": "Contract",
+  "locationScope": "Worldwide",
+  "budget": "NZD 120 fixed",
+  "contact": "qa@example.com",
+  "website": ""
+}
+with open('/tmp/workscout-second-post.json', 'w') as f:
+    json.dump(payload, f)
+PY
+
+curl -fsS --max-time 10 -X POST \
+  -H "content-type: application/json" \
+  -H "X-Forwarded-For: watch-smoke-$RANDOM-$$" \
+  --data-binary @/tmp/workscout-second-post.json \
+  http://127.0.0.1:8787/api/posts >/tmp/workscout-second-post-result.json
+
+echo "RUN_WATCH:"
+curl -fsS --max-time 30 -X POST \
+  -H "x-workscout-client: $CLIENT_KEY" \
+  "http://127.0.0.1:8787/api/watches/$WATCH_ID/run" >/tmp/workscout-watch-run.json
+cat /tmp/workscout-watch-run.json
+echo
+
+curl -fsS --max-time 10 \
+  -H "x-workscout-client: $CLIENT_KEY" \
+  "http://127.0.0.1:8787/api/watches/$WATCH_ID/matches" >/tmp/workscout-watch-matches.json
+
+python3 - <<'PY'
+import json, os
+d=json.load(open('/tmp/workscout-watch-matches.json'))
+matches=d.get('items', [])
+print('watch_matches=', [(x['item']['title'], x['isNew']) for x in matches])
+assert any(x['item']['title'] == os.environ['SECOND_TITLE'] and x['isNew'] for x in matches)
+PY
+
+echo "PIPELINE:"
+curl -fsS --max-time 10 -X POST \
+  -H "content-type: application/json" \
+  -H "x-workscout-client: $CLIENT_KEY" \
+  --data-binary @/tmp/workscout-pipeline-payload.json \
+  http://127.0.0.1:8787/api/pipeline >/tmp/workscout-pipeline-upsert.json
+
+curl -fsS --max-time 10 \
+  -H "x-workscout-client: $CLIENT_KEY" \
+  http://127.0.0.1:8787/api/pipeline >/tmp/workscout-pipeline.json
+
+python3 - <<'PY'
+import json
+d=json.load(open('/tmp/workscout-pipeline.json'))
+items=d.get('items', [])
+print('pipeline=', [(x['item']['title'], x['status']) for x in items])
+assert any(x['status'] == 'applied' for x in items)
+PY
+
 echo "HTML_ROOT:"
 curl -fsS --max-time 5 http://127.0.0.1:8787/ | head -c 120
 echo
-echo "OPENMESH_WORKER_SMOKE_OK"
+echo "OPENMESH_WORKER_SCOUT_WATCH_PIPELINE_SMOKE_OK"

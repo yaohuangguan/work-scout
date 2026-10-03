@@ -4,6 +4,17 @@ All notable product changes are tracked here.
 
 ## Unreleased
 
+### Added
+
+- Scout Watch: persist a search and re-run it through an hourly Cloudflare scheduler once the watch has been due for at least 6 hours
+- baseline-aware watch matching so only newly discovered opportunities are marked new
+- anonymous watch ownership using a random browser key with only its SHA-256 hash stored server-side
+- stricter watch candidate filtering that requires explicit keyword-match evidence
+- Apply Pipeline with Saved, Contacted, Applied, Interview, Offer, and Closed stages
+- D1-backed pipeline persistence and a lightweight kanban UI
+- end-to-end smoke coverage for watch baselines, new matches, and pipeline persistence
+- unit coverage for watch preference reconstruction and candidate filtering
+
 ### Changed
 
 - replaced the Hono API runtime with OpenMesh 0.5 inside the existing Cloudflare Worker

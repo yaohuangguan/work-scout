@@ -130,3 +130,85 @@ export function objectSchema<T>(name: string): StandardSchemaV1<unknown, T> {
       : { ok: false },
   );
 }
+
+
+export type WatchInput = {
+  label: string;
+  query: string;
+  country: string;
+  countryLabel: string;
+  hours: number;
+  types: string[];
+};
+
+export const WatchInputSchema = schema<WatchInput>("watch", (value) => {
+  const input = record(value);
+  if (!input) return { ok: false };
+
+  const label = text(input.label).trim().slice(0, 80);
+  const query = text(input.query).trim();
+  const country = text(input.country, "ANY").trim().toUpperCase();
+  const countryLabel = text(
+    input.countryLabel,
+    country === "ANY" ? "Anywhere / not sure" : country,
+  ).trim();
+  const hours = Number(input.hours ?? 20);
+  const rawTypes = Array.isArray(input.types)
+    ? input.types.filter((item): item is string => typeof item === "string")
+    : text(input.types, "contract,part-time,gig").split(",");
+  const types = rawTypes
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (query.length < 2 || query.length > 500) return { ok: false };
+  if (!Number.isFinite(hours) || hours < 1 || hours > 80) return { ok: false };
+  if (!types.length) return { ok: false };
+
+  return {
+    ok: true,
+    value: {
+      label,
+      query,
+      country,
+      countryLabel,
+      hours: Math.round(hours),
+      types,
+    },
+  };
+});
+
+export const PipelineStatusSchema = schema<{
+  item: Record<string, unknown>;
+  status: "saved" | "contacted" | "applied" | "interview" | "offer" | "closed";
+  notes: string;
+}>("pipeline item", (value) => {
+  const input = record(value);
+  if (!input) return { ok: false };
+
+  const item = record(input.item);
+  const status = text(input.status).trim();
+  const notes = text(input.notes).trim().slice(0, 1000);
+  const allowed = new Set([
+    "saved",
+    "contacted",
+    "applied",
+    "interview",
+    "offer",
+    "closed",
+  ]);
+
+  if (!item || typeof item.id !== "string" || !item.id.trim()) {
+    return { ok: false };
+  }
+  if (!allowed.has(status)) return { ok: false };
+
+  return {
+    ok: true,
+    value: {
+      item,
+      status: status as "saved" | "contacted" | "applied" | "interview" | "offer" | "closed",
+      notes,
+    },
+  };
+});

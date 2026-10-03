@@ -32,10 +32,19 @@ OpenMesh HTTP runtime
   |      + Remote OK
   |      + Remotive
   |
+  +--> Scout Watch / Apply Pipeline
+  |
   +--> openmesh-node/db
          |
          v
        D1 binding
+
+Cloudflare Cron (hourly scheduler)
+  |
+  +--> refresh watches due for ≥6 hours
+  +--> refreshDueWatches()
+  +--> shared discovery pipeline
+  +--> watch_matches
 ```
 
 There is no separate Node server, container, VM, or Postgres requirement in the current architecture.
@@ -141,6 +150,41 @@ Posting protection includes:
 - cleanup of old throttle records
 - React output escaping
 
+## Scout Watch
+
+Scout Watch reuses the same discovery pipeline as interactive search instead of introducing a second ranking implementation.
+
+Each watch persists:
+
+- query text
+- country / region
+- weekly availability
+- accepted work types
+- last check timestamp
+- last successful new-match timestamp
+
+The browser creates a random client key. Middleware hashes that key with SHA-256 and only the hash is stored in D1.
+
+On creation, the current matching set is stored as a viewed baseline. Later refreshes use `INSERT OR IGNORE` against `(watch_id, item_id)`, so only never-before-seen opportunities become new matches.
+
+Watch candidate selection is stricter than interactive search. A candidate must:
+
+- not be location-restricted
+- score at least 40
+- contain explicit `Matches ...` evidence from the search terms
+
+Cloudflare Cron invokes `refreshDueWatches()` every hour. The query only selects watches that have not been checked for at least 6 hours, ordered oldest first, and refreshes a bounded batch per run. External source requests retain their cache hints, so repeated watches can share upstream cache where Cloudflare supports it.
+
+## Apply Pipeline
+
+Application state is persisted in `application_pipeline` and keyed by the hashed anonymous client plus `item_id`.
+
+The stored stages are:
+
+`saved → contacted → applied → interview → offer / closed`
+
+The complete `WorkItem` snapshot is stored with the stage so the board stays useful even if the upstream listing later disappears.
+
 ## Failure behavior
 
 External search sources are isolated with independent error handling.
@@ -184,6 +228,9 @@ Static asset requests bypass OpenMesh and continue directly through the `ASSETS`
 - community posting
 - immediate community searchability
 - safe public post listing
+- Scout Watch baseline creation
+- newly discovered Watch matches
+- Apply Pipeline persistence
 - SPA assets
 
 ## Future service split
