@@ -177,7 +177,7 @@ export async function listWatches(db: Db, clientHash: string): Promise<WatchSumm
     `SELECT
        w.*,
        COUNT(m.item_id) AS match_count,
-       SUM(CASE WHEN m.viewed_at IS NULL THEN 1 ELSE 0 END) AS new_count
+       SUM(CASE WHEN m.item_id IS NOT NULL AND m.viewed_at IS NULL THEN 1 ELSE 0 END) AS new_count
      FROM search_watches w
      LEFT JOIN watch_matches m ON m.watch_id = w.id
      WHERE w.client_hash = ?
