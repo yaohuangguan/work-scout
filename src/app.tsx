@@ -650,12 +650,29 @@ export default function App() {
   const [productMessage, setProductMessage] = useState("");
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryParam = params.get("q")?.trim();
+    const countryParam = params.get("country")?.toUpperCase();
+    const hoursParam = Number(params.get("hours"));
+    const typesParam = params.get("types")
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (queryParam) setQuery(queryParam);
+    if (countryParam && countryNames[countryParam]) setCountry(countryParam);
+    if ([10, 20, 25, 40].includes(hoursParam)) setHours(hoursParam);
+    if (typesParam?.length) setTypes(typesParam);
+  }, []);
+
+  useEffect(() => {
     fetch(apiUrl("/api/meta"))
       .then((response) => response.ok
         ? response.json() as Promise<{ country?: string }>
         : null)
       .then((meta) => {
-        if (meta?.country && countryNames[meta.country]) setCountry(meta.country);
+        const hasCountryParam = new URLSearchParams(window.location.search).has("country");
+        if (!hasCountryParam && meta?.country && countryNames[meta.country]) setCountry(meta.country);
       })
       .catch(() => undefined);
   }, []);
@@ -883,11 +900,18 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <button className="brand brand-button" onClick={() => setView("explore")}>
+        <a
+          className="brand brand-button"
+          href="/"
+          onClick={(event) => {
+            event.preventDefault();
+            setView("explore");
+          }}
+        >
           <span className="brand-mark">W</span>
           <span>WorkScout</span>
           <span className="beta">BETA</span>
-        </button>
+        </a>
 
         <nav className="main-nav" aria-label="Main navigation">
           <button className={view === "explore" ? "active" : ""} onClick={() => setView("explore")}>Explore</button>
@@ -1004,6 +1028,45 @@ export default function App() {
                   ))}
                 </div>
               </div>
+            )}
+
+            {!hasSearched && (
+              <section className="seo-home" id="how-it-works" aria-labelledby="how-workscout-works">
+                <div className="seo-home-intro">
+                  <span className="eyebrow">How WorkScout works</span>
+                  <h2 id="how-workscout-works">One search across remote jobs and direct hiring leads.</h2>
+                  <p>
+                    WorkScout looks beyond a single job board. It combines remote job feeds with public hiring leads,
+                    then ranks opportunities by skills, location fit, work type, weekly availability and freshness.
+                    Every result keeps the original source visible.
+                  </p>
+                </div>
+                <div className="seo-home-grid">
+                  <article>
+                    <strong>1</strong>
+                    <h3>Describe what you can do</h3>
+                    <p>Search by capability and constraints, not only by a job title.</p>
+                  </article>
+                  <article>
+                    <strong>2</strong>
+                    <h3>Check fit before the click</h3>
+                    <p>See location restrictions, flexibility, source and freshness earlier.</p>
+                  </article>
+                  <article>
+                    <strong>3</strong>
+                    <h3>Keep the search moving</h3>
+                    <p>Use Scout Watch for new matches and Pipeline to track follow-up.</p>
+                  </article>
+                </div>
+                <nav className="seo-link-grid" aria-label="Remote work resources">
+                  <a href="/remote-work/"><strong>Remote work</strong><span>Search jobs and leads with fit signals →</span></a>
+                  <a href="/freelance-work/"><strong>Freelance work</strong><span>Contract, gig and project opportunities →</span></a>
+                  <a href="/remote-jobs-new-zealand/"><strong>Remote jobs in New Zealand</strong><span>Screen country restrictions earlier →</span></a>
+                  <a href="/direct-hiring-leads/"><strong>Direct hiring leads</strong><span>Find public hiring intent beyond job boards →</span></a>
+                  <a href="/guides/how-to-find-remote-work/"><strong>Remote work guide</strong><span>A practical search workflow for 2026 →</span></a>
+                  <a href="/guides/remote-job-scams/"><strong>Remote job scam checklist</strong><span>Verify sources and suspicious offers →</span></a>
+                </nav>
+              </section>
             )}
           </section>
         )}
@@ -1173,7 +1236,10 @@ export default function App() {
           <p>We rank and explain opportunities without hiding where they came from.</p>
         </div>
         <div className="footer-links">
-          <span>Job feeds + direct hiring leads</span>
+          <a href="/remote-work/">Remote work</a>
+          <a href="/freelance-work/">Freelance</a>
+          <a href="/direct-hiring-leads/">Direct leads</a>
+          <a href="/guides/how-to-find-remote-work/">Guides</a>
           <button onClick={() => setShowPost(true)}>Post work</button>
         </div>
       </footer>

@@ -6,6 +6,14 @@ All notable product changes are tracked here.
 
 ### Added
 
+- SEO/AI-discovery foundation with static landing pages and practical guides
+- unique canonical/title/description/social metadata per indexable page
+- sitemap.xml, robots.txt, llms.txt, PNG search favicon, and social preview image
+- WebSite/Organization/WebPage/Article/Breadcrumb structured data
+- crawlable homepage fallback content and internal resource links
+- true 404 handling instead of SPA soft-404s
+- API X-Robots-Tag noindex headers
+- SEO regression tests and build-time page generation
 - Scout Watch: persist a search and re-run it through an hourly Cloudflare scheduler once the watch has been due for at least 6 hours
 - baseline-aware watch matching so only newly discovered opportunities are marked new
 - anonymous watch ownership using a random browser key with only its SHA-256 hash stored server-side

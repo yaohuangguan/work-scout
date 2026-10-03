@@ -1,0 +1,22 @@
+# WorkScout
+
+> WorkScout is a remote-work discovery web app that searches formal job feeds and direct hiring leads, then ranks opportunities by skills, location eligibility, flexibility and freshness while preserving the original source.
+
+## Core pages
+- https://workscout.nzs.workers.dev/ — interactive WorkScout search
+- https://workscout.nzs.workers.dev/remote-work/ — overview of WorkScout remote-work discovery
+- https://workscout.nzs.workers.dev/freelance-work/ — freelance and contract work discovery
+- https://workscout.nzs.workers.dev/remote-jobs-new-zealand/ — remote work that may be available from New Zealand
+- https://workscout.nzs.workers.dev/direct-hiring-leads/ — direct hiring lead discovery
+
+## Guides
+- https://workscout.nzs.workers.dev/guides/ — guide index
+- https://workscout.nzs.workers.dev/guides/how-to-find-remote-work/
+- https://workscout.nzs.workers.dev/guides/remote-work-location-restrictions/
+- https://workscout.nzs.workers.dev/guides/remote-job-scams/
+
+## Product behavior
+WorkScout keeps source URLs visible. Eligibility is presented as likely eligible, uncertain or restricted rather than guaranteed. Scout Watch can monitor saved searches, and Apply Pipeline tracks follow-up stages.
+
+## API
+Public API endpoints are implementation details and are excluded from crawling via robots.txt.
