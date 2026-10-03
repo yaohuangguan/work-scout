@@ -19,6 +19,21 @@ import {
 } from "./contracts";
 
 const OPENMESH_PORT = 8787;
+const EXTERNAL_SOURCES = [
+  "Reddit r/forhire",
+  "HN Freelance",
+  "Himalayas",
+  "Remote OK",
+  "Remotive",
+] as const;
+
+function externalSearchEnabled() {
+  const value = String(
+    (env as unknown as { WORKSCOUT_EXTERNAL_SEARCH?: string })
+      .WORKSCOUT_EXTERNAL_SEARCH ?? "true",
+  ).toLowerCase();
+  return value !== "false" && value !== "0" && value !== "off";
+}
 
 const db = database(env.DB, {
   name: "workscout-d1",
@@ -108,11 +123,7 @@ app.get("/api/health", {
   database: db.state,
   now: new Date().toISOString(),
   sources: [
-    "Reddit r/forhire",
-    "HN Freelance",
-    "Himalayas",
-    "Remote OK",
-    "Remotive",
+    ...EXTERNAL_SOURCES,
     "WorkScout Community",
   ],
 }));
@@ -130,7 +141,18 @@ app.get("/api/search", {
   response: objectSchema<Record<string, unknown>>("search response"),
 }, async ({ query }) => {
   const [external, community] = await Promise.all([
-    searchExternal(query),
+    externalSearchEnabled()
+      ? searchExternal(query)
+      : Promise.resolve({
+          plan: planQuery(query.raw),
+          items: [],
+          sources: EXTERNAL_SOURCES.map((name) => ({
+            name,
+            ok: false,
+            count: 0,
+            error: "External search disabled",
+          })),
+        }),
     getCommunity(query).catch(() => []),
   ]);
 

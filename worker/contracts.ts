@@ -85,6 +85,23 @@ export const PostInputSchema = schema<PostInput>("post", (value) => {
     ? input.skills.filter((item): item is string => typeof item === "string")
     : text(input.skills);
 
+  if (website) {
+    return {
+      ok: true,
+      value: {
+        title,
+        company,
+        description,
+        contact,
+        workType,
+        locationScope,
+        budget,
+        website,
+        skills,
+      },
+    };
+  }
+
   if (title.length < 3 || title.length > 120) return { ok: false };
   if (description.length < 20 || description.length > 3000) return { ok: false };
   if (contact.length < 5 || contact.length > 300) return { ok: false };

@@ -173,6 +173,7 @@ Static asset requests bypass OpenMesh and continue directly through the `ASSETS`
 - Cloudflare Worker runtime types
 - TypeScript
 - source adapter tests
+- a real OpenMesh control-plane/service-discovery path with service registration, `app.mesh()`, traffic targeting, and request-context propagation
 - frontend production build
 
 `npm run smoke` starts the real local Wrangler runtime and verifies:

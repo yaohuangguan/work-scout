@@ -4,18 +4,32 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-source /home/samyao/.nvm/nvm.sh
-nvm use 24 >/dev/null
+if [ -f /home/samyao/.nvm/nvm.sh ]; then
+  # Local WSL convenience. GitHub Actions already provides Node 24.
+  # shellcheck disable=SC1091
+  source /home/samyao/.nvm/nvm.sh
+  nvm use 24 >/dev/null
+fi
+
+STATE_DIR="$(mktemp -d)"
 
 npm run build >/tmp/workscout-smoke-build.log 2>&1
-npm run db:migrate:local >/tmp/workscout-smoke-migrate.log 2>&1
+./node_modules/.bin/wrangler d1 execute workscout-db \
+  --local \
+  --persist-to "$STATE_DIR" \
+  --file=./schema.sql \
+  >/tmp/workscout-smoke-migrate.log 2>&1
 
-./node_modules/.bin/wrangler dev --local --port 8787 >/tmp/workscout-smoke-server.log 2>&1 &
+./node_modules/.bin/wrangler dev --local --port 8787 \
+  --persist-to "$STATE_DIR" \
+  --var "WORKSCOUT_EXTERNAL_SEARCH:${WORKSCOUT_EXTERNAL_SEARCH:-true}" \
+  >/tmp/workscout-smoke-server.log 2>&1 &
 SERVER_PID=$!
 
 cleanup() {
   pkill -P "$SERVER_PID" 2>/dev/null || true
   kill "$SERVER_PID" 2>/dev/null || true
+  rm -rf "$STATE_DIR"
 }
 trap cleanup EXIT
 

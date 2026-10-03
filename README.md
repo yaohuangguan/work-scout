@@ -214,7 +214,8 @@ npm run smoke
 1. Wrangler Worker type generation
 2. TypeScript across UI and Worker
 3. source-adapter tests
-4. frontend production build
+4. a real OpenMesh control-plane/service-discovery test using `app.mesh()`
+5. frontend production build
 
 The smoke test starts the real local Wrangler runtime and verifies:
 
