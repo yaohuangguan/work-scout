@@ -278,7 +278,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: (quer
       headers: { "content-type": "application/json" },
       body: JSON.stringify(form),
     });
-    const data = await response.json();
+    const data = await response.json() as { error?: string };
     if (!response.ok) {
       setState("idle");
       setError(data.error || "Could not publish this work.");
@@ -388,7 +388,9 @@ export default function App() {
 
   useEffect(() => {
     fetch(apiUrl("/api/meta"))
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => response.ok
+        ? response.json() as Promise<{ country?: string }>
+        : null)
       .then((meta) => {
         if (meta?.country && countryNames[meta.country]) setCountry(meta.country);
       })

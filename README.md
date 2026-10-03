@@ -112,8 +112,8 @@ Anyone can publish a small piece of remote work into the WorkScout community poo
 The first release includes:
 
 - direct email or application URL contact
-- D1 persistence in the current public Worker
-- SQLite persistence through `openmesh-node/db` in the OpenMesh backend preview
+- Cloudflare D1 persistence through `openmesh-node/db`
+- OpenMesh request validation, body parsing, middleware, and error handling inside the Worker
 - honeypot bot protection
 - per-connection posting throttling
 - hashed fingerprints instead of raw IP storage
@@ -121,51 +121,34 @@ The first release includes:
 
 ## Architecture
 
-The public deployment is still the original Cloudflare Worker + Hono + D1 stack while the next backend is being validated on OpenMesh.
-
-### Current production
+WorkScout remains a Cloudflare Worker application. The HTTP runtime inside the Worker is now OpenMesh 0.5 instead of Hono.
 
 ```text
-React / Vite
+React / Vite assets
     |
+    +-----------------------------> ASSETS binding
+    |
+    | /api/*
     v
-Cloudflare Worker / Hono
+Cloudflare Worker fetch()
     |
-    +--> Reddit / HN / job APIs
-    +--> Cloudflare D1
+    | handleAsNodeRequest()
+    v
+OpenMesh HTTP runtime
+    |
+    +--> typed routes / middleware / body parsing
+    +--> Reddit / HN / remote-job APIs
+    +--> openmesh-node/db
+            |
+            v
+        Cloudflare D1
 ```
 
-### OpenMesh backend preview
+Cloudflare's Node compatibility layer provides the `node:http` server APIs OpenMesh uses. The OpenMesh server listens on a Worker-local virtual port; `cloudflare:node` bridges Worker requests into it.
 
-```text
-React / Vite
-    |
-    | /api
-    v
-OpenMesh gateway :8787
-    |
-    +--> app.mesh("search") ------> search service :8791
-    |                               + Reddit / HN / job APIs
-    |                               + bounded TTL cache
-    |
-    +--> app.mesh("community") ---> community service :8792
-                                    + openmesh-node/db
-                                    + node:sqlite
+There is no separate VM, container, Node host, Postgres service, or second production stack.
 
-OpenMesh control plane :8790
-    + service registration
-    + service discovery
-    + live peer pools
-```
-
-The split follows real workload boundaries rather than creating microservices for presentation value: gateway owns the public API and result merge, search owns outbound discovery, and community owns posting, throttling, and persistence.
-
-The React application keeps the same `/api/*` contract in both backends.
-
-More detail:
-
-- [Current production architecture](docs/ARCHITECTURE.md)
-- [OpenMesh runtime migration](docs/openmesh-runtime.md)
+More detail: [architecture](docs/ARCHITECTURE.md).
 
 ## Why the core search does not require an LLM
 
@@ -187,14 +170,13 @@ The model should enhance discovery — not become the crawler.
 ## Stack
 
 - **Frontend:** React 19, TypeScript, Vite
-- **Backend preview:** OpenMesh gateway + search + community services
-- **Service discovery:** OpenMesh control plane
-- **Database preview:** `openmesh-node/db` + Node `node:sqlite`
-- **Current production API:** Hono on Cloudflare Workers
-- **Current production database:** Cloudflare D1
-- **Testing:** Vitest + real OpenMesh topology test + end-to-end smoke script
+- **Backend runtime:** OpenMesh 0.5 on Cloudflare Workers
+- **Worker bridge:** `node:http` + `cloudflare:node`
+- **Database:** Cloudflare D1 through `openmesh-node/db`
+- **Discovery sources:** Reddit, Hacker News, Himalayas, Remote OK, Remotive
+- **Testing:** Vitest + real Wrangler end-to-end smoke test
 - **CI:** GitHub Actions
-- **Current production deployment:** Wrangler
+- **Deployment:** Wrangler
 
 ## Run locally
 
@@ -211,25 +193,14 @@ npm install
 npm run dev
 ```
 
-The default development command starts the OpenMesh backend plus Vite.
+The default development command starts Wrangler and Vite.
 
 Then open:
 
 - UI: `http://localhost:5173`
-- OpenMesh gateway: `http://localhost:8787`
-- control plane: `http://localhost:8790`
-- search service: `http://localhost:8791`
-- community service: `http://localhost:8792`
+- OpenMesh Worker API: `http://localhost:8787`
 
-Vite keeps proxying `/api` to port 8787, so the frontend does not need a different API client.
-
-To run the legacy Worker locally instead:
-
-```bash
-npm run dev:worker
-```
-
-The legacy Worker uses port 8788 on this branch so it can coexist with the OpenMesh gateway.
+Vite proxies `/api` to the Worker, so the frontend and production API contract stay identical.
 
 ## Verify before changing main
 
@@ -240,52 +211,43 @@ npm run smoke
 
 `npm run check` runs:
 
-1. TypeScript across UI, Worker, and OpenMesh server
-2. existing source-adapter tests
-3. a real OpenMesh topology integration test
+1. Wrangler Worker type generation
+2. TypeScript across UI and Worker
+3. source-adapter tests
 4. frontend production build
-5. Node API bundle
 
-The topology test starts a real control plane, registers search/community services on random ports, verifies discovery, writes through SQLite, and exercises post/search/list traffic through the gateway.
+The smoke test starts the real local Wrangler runtime and verifies:
 
-The default smoke test additionally verifies:
-
-- OpenMesh gateway health
-- one discovered search peer and one discovered community peer
+- OpenMesh Worker health
+- D1 readiness
 - live external search
 - community publishing through `openmesh-node/db`
 - immediate searchability of a new post
 - public post listing does not expose contact data
-
-The previous Worker smoke remains available as `npm run smoke:legacy`.
+- SPA asset serving
 
 ## Deploy
 
-The public site is intentionally **not** switched to OpenMesh in this refactor.
-
-`npm run deploy` continues deploying the current Cloudflare Worker + D1 backend:
+OpenMesh runs inside the existing Cloudflare Worker, so deployment stays the same:
 
 ```bash
 npm run db:migrate:remote
 npm run deploy
 ```
 
-Current Cloudflare resources:
+Cloudflare resources:
 
 - Worker: `workscout`
 - D1 database: `workscout-db`
 - Production: https://workscout.nzs.workers.dev
-
-The OpenMesh production cutover will happen separately after choosing the Node hosting target and production persistence backend. See [docs/openmesh-runtime.md](docs/openmesh-runtime.md).
 
 ## Repository structure
 
 ```text
 .
 ├── src/                 # React frontend
-├── server/              # OpenMesh gateway, services, DB adapter, topology test
-├── worker/              # current Hono Worker + shared source adapters/ranking
-├── scripts/             # OpenMesh + legacy end-to-end smoke verification
+├── worker/              # OpenMesh Worker API + source adapters/ranking
+├── scripts/             # Wrangler end-to-end smoke verification
 ├── public/              # favicon and web manifest
 ├── docs/                # architecture, OpenMesh migration, product assets
 ├── .github/             # CI and contribution templates

@@ -1,44 +1,93 @@
 # WorkScout architecture
 
-WorkScout is intentionally small: one React frontend, one Cloudflare Worker, one D1 database, and independent source adapters.
+WorkScout runs as a single Cloudflare Worker with static assets and D1 bindings.
 
-The architecture is designed so new discovery sources can be added without changing the UI contract.
+OpenMesh 0.5 is the HTTP application runtime inside that Worker. Cloudflare's Node.js compatibility layer exposes `node:http`, and `cloudflare:node` bridges Worker `fetch()` requests into the OpenMesh Node-style request listener.
 
 ## Request flow
 
 ```text
-User description
-    |
-    v
-SearchPreferences
-    |
-    v
-planQuery()
-    |
-    +--> Reddit r/forhire adapter
-    +--> HN freelancer adapter
-    +--> Himalayas adapter
-    +--> Remote OK adapter
-    +--> Remotive adapter
-    +--> WorkScout D1 posts
-    |
-    v
-WorkItem normalization
-    |
-    v
-eligibility inference
-    |
-    v
-scoreWork()
-    |
-    v
-cross-source dedupe
-    |
-    v
-ranked WorkItem[]
+Browser
+  |
+  | GET /, assets
+  |------------------------------> ASSETS binding
+  |
+  | /api/*
+  v
+Cloudflare Worker fetch()
+  |
+  | handleAsNodeRequest()
+  v
+OpenMesh HTTP runtime
+  |
+  +--> typed routes / validation
+  +--> middleware / CORS
+  +--> body parser
+  +--> error handler
+  |
+  +--> searchExternal()
+  |      + Reddit r/forhire
+  |      + HN freelancer
+  |      + Himalayas
+  |      + Remote OK
+  |      + Remotive
+  |
+  +--> openmesh-node/db
+         |
+         v
+       D1 binding
 ```
 
-## Core model
+There is no separate Node server, container, VM, or Postgres requirement in the current architecture.
+
+## Why OpenMesh can run in Workers
+
+For the current Worker compatibility date, Cloudflare provides Node.js compatibility including `node:http` server APIs.
+
+WorkScout creates one virtual Node HTTP server:
+
+```ts
+const server = createServer((req, res) => {
+  listener?.(req, res);
+});
+
+server.listen(8787);
+```
+
+The port is a Worker-local routing key rather than a traditional TCP listener.
+
+The Worker entrypoint routes API requests into that server:
+
+```ts
+return handleAsNodeRequest(8787, request, env, ctx);
+```
+
+OpenMesh plugin boot is lazy. `app.ready()` is first executed inside a Worker request context because Cloudflare correctly forbids timers and asynchronous I/O from global scope.
+
+## Database integration
+
+The D1 binding is registered as an OpenMesh database resource:
+
+```ts
+const db = database(env.DB, {
+  name: "workscout-d1",
+});
+
+app.register(db);
+```
+
+OpenMesh does not wrap D1's query API. Routes still use the native binding:
+
+```ts
+await db.client
+  .prepare("SELECT ...")
+  .bind(...)
+  .all();
+```
+
+This is the same integration philosophy used for Prisma, Drizzle, Kysely, TypeORM and other clients: OpenMesh owns application lifecycle and health semantics, while the database library keeps its own API.
+
+## Core search model
 
 Every external or community opportunity becomes a `WorkItem`.
 
@@ -61,7 +110,7 @@ Important fields include:
 - `why`
 - `kind`
 
-The frontend should not need source-specific rendering logic beyond useful presentation differences such as highlighting `Lead`.
+The frontend does not need source-specific rendering logic beyond useful presentation differences such as highlighting direct leads.
 
 ## Source adapters
 
@@ -76,102 +125,68 @@ Each adapter should:
 5. avoid pretending uncertain location data is definitive
 6. fail independently so one source cannot break the whole search
 
-External requests use short Cloudflare cache TTLs to reduce repeated upstream traffic.
-
-## Query planning
-
-`planQuery()` currently combines:
-
-- deterministic skill expansions
-- English token extraction
-- duplicate removal
-- a capped query list
-
-This keeps the baseline fast and model-free.
-
-A future semantic planner can sit in front of the same adapter layer as long as it returns the same query-plan contract.
-
-## Eligibility
-
-Eligibility is deliberately expressed as one of:
-
-- `eligible`
-- `uncertain`
-- `restricted`
-
-WorkScout should prefer an honest `uncertain` over a confident but incorrect answer.
-
-Country / region inference is intentionally conservative. Any future LLM-based interpretation should preserve this three-state behavior.
-
-## Ranking
-
-Current scoring considers:
-
-- matched search terms
-- eligibility
-- requested work types
-- weekly availability
-- freshness
-- direct-lead status
-
-Direct leads receive a boost because they are often more immediate and flexible than generic remote listings.
-
-Scores are product-ranking signals, not claims that a user is guaranteed to qualify for or obtain the work.
-
-## Deduplication
-
-Deduplication happens twice:
-
-1. inside external-source aggregation
-2. again after community posts and external results are merged
-
-The current key uses normalized company + title and keeps the stronger ranked item.
-
-This should evolve toward richer canonicalization when more ATS / company sources are added.
+External requests use Cloudflare cache TTL hints to reduce repeated upstream traffic.
 
 ## Community posts
 
 Community work is stored in Cloudflare D1.
 
-Posting protection currently includes:
+Posting protection includes:
 
-- input length validation
+- typed request validation
 - contact validation
 - a hidden honeypot
 - per-connection throttling
 - SHA-256 fingerprints rather than raw IP storage
-- automatic cleanup of old throttle records
-
-The community system is intentionally minimal and does not yet implement user accounts, messaging, payments, or reputation.
-
-## Frontend state
-
-Saved opportunities and recent searches are stored in local storage.
-
-This keeps the first product useful without authentication.
-
-Account sync should only be introduced when cross-device state provides enough value to justify identity, privacy, migration, and account-recovery complexity.
+- cleanup of old throttle records
+- React output escaping
 
 ## Failure behavior
 
-Search sources are isolated with independent error handling.
+External search sources are isolated with independent error handling.
 
-The API returns source health alongside results so the UI can show when one source is temporarily unavailable while still presenting results from the others.
+The API returns source health alongside results, so one failing source does not take down the entire search.
 
-## Testing
+OpenMesh's error handler keeps public API errors in the existing `{ error }` shape expected by the React frontend.
+
+## Worker lifecycle
+
+The OpenMesh app is configured in global scope but is not booted there.
+
+On the first `/api/*` request:
+
+1. `app.ready()` runs inside request context
+2. plugins finish booting
+3. the OpenMesh listener is cached
+4. `handleAsNodeRequest()` dispatches the request
+
+Later requests reuse the ready application and virtual server.
+
+Static asset requests bypass OpenMesh and continue directly through the `ASSETS` binding.
+
+## Verification
+
+`npm run typecheck` regenerates Worker runtime types with Wrangler before TypeScript validation.
 
 `npm run check` verifies:
 
+- Cloudflare Worker runtime types
 - TypeScript
-- unit tests
-- production build
+- source adapter tests
+- frontend production build
 
-`npm run smoke` verifies the end-to-end local Worker path including:
+`npm run smoke` starts the real local Wrangler runtime and verifies:
 
-- health
-- live source retrieval
-- D1 writes
-- community post searchability
+- OpenMesh Worker health
+- D1 readiness
+- live external search
+- community posting
+- immediate community searchability
+- safe public post listing
 - SPA assets
 
-GitHub Actions runs the deterministic check suite for pushes and pull requests.
+## Future service split
+
+WorkScout does not need to be split into multiple Workers yet.
+
+When a real scaling or ownership boundary appears, Cloudflare Service Bindings are the preferred transport between Workers. OpenMesh service discovery can then be integrated with a durable registry adapter rather than pretending isolate-local memory is a distributed control plane.

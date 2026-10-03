@@ -1,13 +1,9 @@
 node_modules/
 dist/
-dist-server/
 .wrangler/
-.data/
+worker-configuration.d.ts
 .env
 .env.*
 !.env.example
 .DS_Store
 *.log
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
