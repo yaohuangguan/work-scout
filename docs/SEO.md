@@ -41,7 +41,7 @@ Cloudflare uses `not_found_handling: 404-page` plus `html_handling: auto-trailin
 
 ## Search Console launch checklist
 
-1. Submit `https://workscout.nzs.workers.dev/sitemap.xml`.
+1. Submit `https://workscout.samyao.me/sitemap.xml`.
 2. Inspect the homepage and the highest-value landing pages.
 3. Request recrawling after meaningful changes.
 4. Monitor Page Indexing and Core Web Vitals.

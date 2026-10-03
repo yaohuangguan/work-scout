@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-const origin = "https://workscout.nzs.workers.dev";
+const origin = "https://workscout.samyao.me";
 
 const pages = [
   "remote-work",
@@ -18,7 +18,7 @@ describe("SEO surface", () => {
   it("gives the homepage canonical metadata and crawlable internal links", async () => {
     const html = await readFile("index.html", "utf8");
 
-    expect(html).toContain('<link rel="canonical" href="https://workscout.nzs.workers.dev/"');
+    expect(html).toContain('<link rel="canonical" href="https://workscout.samyao.me/"');
     expect(html).toContain('name="robots"');
     expect(html).toContain('"@type": "WebSite"');
     expect(html).toContain('href="/remote-work/"');
