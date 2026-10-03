@@ -51,7 +51,7 @@ export type ApiError = {
 
 type ValidationResult<T> =
   | { ok: true; value: T }
-  | { ok: false };
+  | { ok: false; message?: string };
 
 function standard<T>(
   name: string,
@@ -65,7 +65,7 @@ function standard<T>(
         const result = validate(value);
         return result.ok
           ? { value: result.value }
-          : { issues: [{ message: `Invalid ${name}` }] };
+          : { issues: [{ message: result.message || `Invalid ${name}` }] };
       },
     },
   };
@@ -154,10 +154,22 @@ export const PostInputSchema = standard<PostInput>("post", (value) => {
     ? input.skills.filter((item): item is string => typeof item === "string")
     : stringValue(input.skills);
 
-  if (title.length < 3 || title.length > 120) return { ok: false };
-  if (description.length < 20 || description.length > 3000) return { ok: false };
-  if (contact.length < 5 || contact.length > 300) return { ok: false };
-  if (!contact.includes("@") && !/^https?:\/\//i.test(contact)) return { ok: false };
+  // Preserve the existing honeypot behavior: bots receive a normal success response
+  // without learning which validation rule exposed them.
+  if (!website) {
+    if (title.length < 3 || title.length > 120) {
+      return { ok: false, message: "Title must be 3–120 characters." };
+    }
+    if (description.length < 20 || description.length > 3000) {
+      return { ok: false, message: "Description must be 20–3000 characters." };
+    }
+    if (contact.length < 5 || contact.length > 300) {
+      return { ok: false, message: "Add an email or application URL." };
+    }
+    if (!contact.includes("@") && !/^https?:\/\//i.test(contact)) {
+      return { ok: false, message: "Contact must be an email or http(s) URL." };
+    }
+  }
 
   return {
     ok: true,

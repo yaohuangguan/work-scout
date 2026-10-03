@@ -59,6 +59,20 @@ describe("WorkScout OpenMesh topology", () => {
     expect(invalidPost.status).toBe(400);
     expect(typeof ((await invalidPost.json()) as any).error).toBe("string");
 
+    const honeypot = await fetch(topology.addresses.gateway + "/api/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "",
+        description: "",
+        contact: "",
+        skills: "",
+        website: "https://spam.example",
+      }),
+    });
+    expect(honeypot.status).toBe(201);
+    expect((await honeypot.json()) as any).toEqual({ ok: true });
+
     const posted = await fetch(topology.addresses.gateway + "/api/posts", {
       method: "POST",
       headers: {
@@ -82,6 +96,44 @@ describe("WorkScout OpenMesh topology", () => {
     const postedBody = await posted.json() as any;
     expect(postedBody.ok).toBe(true);
     expect(typeof postedBody.id).toBe("string");
+
+    const rateLimitedBody = {
+      title: "Another WorkScout task",
+      company: "WorkScout QA",
+      description: "Exercise the posting throttle across the OpenMesh gateway and community service.",
+      skills: "RateLimitNeedle",
+      workType: "Contract",
+      locationScope: "Worldwide",
+      budget: "NZD 100",
+      contact: "qa@example.com",
+      website: "",
+    };
+
+    for (let index = 0; index < 3; index++) {
+      const accepted = await fetch(topology.addresses.gateway + "/api/posts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "203.0.113.42",
+        },
+        body: JSON.stringify({
+          ...rateLimitedBody,
+          title: `Another WorkScout task ${index + 1}`,
+        }),
+      });
+      expect(accepted.status).toBe(201);
+    }
+
+    const rateLimited = await fetch(topology.addresses.gateway + "/api/posts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-forwarded-for": "203.0.113.42",
+      },
+      body: JSON.stringify(rateLimitedBody),
+    });
+    expect(rateLimited.status).toBe(429);
+    expect(((await rateLimited.json()) as any).error).toMatch(/Too many posts/i);
 
     const searchUrl = new URL(topology.addresses.gateway + "/api/search");
     searchUrl.searchParams.set("q", "OpenMeshNeedle2026");
