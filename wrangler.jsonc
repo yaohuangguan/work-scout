@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workscout",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-03",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workscout-db",
+      "database_id": "667ad38c-71cc-4574-9902-e861449b2915"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

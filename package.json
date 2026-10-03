@@ -1,0 +1,33 @@
+{
+  "name": "workscout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,ui \"npm:dev:worker\" \"npm:dev:ui\"",
+    "dev:ui": "vite --host 0.0.0.0",
+    "dev:worker": "wrangler dev --local --port 8787",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build",
+    "deploy": "npm run check && wrangler deploy",
+    "db:migrate:local": "wrangler d1 execute workscout-db --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute workscout-db --remote --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.13.12",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
+  }
+}
