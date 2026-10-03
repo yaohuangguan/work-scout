@@ -1,0 +1,9 @@
+{
+  "name": "WorkScout",
+  "short_name": "WorkScout",
+  "description": "Find remote work you can actually take.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f2",
+  "theme_color": "#171a18"
+}

@@ -40,11 +40,12 @@ print('count=', d.get('count'))
 print('sources=', [(x.get('name'), x.get('ok'), x.get('count')) for x in d.get('sources',[])])
 print('top=', [(x.get('source'), x.get('title'), x.get('score')) for x in d.get('items',[])[:3]])
 assert 'items' in d
-assert len(d.get('sources', [])) == 4
+assert len(d.get('sources', [])) == 6
+assert any(x.get('name') == 'HN Freelance' for x in d.get('sources', []))
 PY
 
 echo "POST_WORK:"
-curl -fsS --max-time 10 -X POST   -H "content-type: application/json"   -d '{"title":"Smoke test remote task","company":"WorkScout QA","description":"A real end to end smoke test task for the community posting flow.","skills":"SmokeSkillOct2026, React","workType":"Contract","locationScope":"Worldwide","budget":"NZD 100 fixed","contact":"qa@example.com"}'   http://127.0.0.1:8787/api/posts >/tmp/workscout-post.json
+curl -fsS --max-time 10 -X POST   -H "content-type: application/json"   -H "X-Forwarded-For: smoke-$RANDOM-$$"   -d '{"title":"Smoke test remote task","company":"WorkScout QA","description":"A real end to end smoke test task for the community posting flow.","skills":"SmokeSkillOct2026, React","workType":"Contract","locationScope":"Worldwide","budget":"NZD 100 fixed","contact":"qa@example.com","website":""}'   http://127.0.0.1:8787/api/posts >/tmp/workscout-post.json
 cat /tmp/workscout-post.json
 echo
 
