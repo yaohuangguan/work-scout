@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest a focused improvement to WorkScout
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user problem before the solution.
+      placeholder: I am trying to..., but...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should WorkScout do differently?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Discovery source
+        - Search / ranking
+        - Eligibility
+        - Saved searches / alerts
+        - Community posting
+        - UI / UX
+        - Infrastructure
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example opportunities or sources
+      description: If this is about a new source, include its public URL and why it is useful.
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Product fit
+      options:
+        - label: This keeps original-source attribution visible.
+          required: false
+        - label: This does not require an LLM for the basic search path.
+          required: false
