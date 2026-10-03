@@ -1,7 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap");
-
 :root {
-  font-family: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #171a18;
   background: #f6f7f2;
   font-synthesis: none;
@@ -76,7 +74,7 @@ a {
   align-items: center;
   gap: 12px;
   text-decoration: none;
-  font: 800 20px/1 "Manrope", sans-serif;
+  font: 800 20px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.03em;
 }
 
@@ -96,7 +94,7 @@ a {
   color: var(--muted);
   border-radius: 999px;
   padding: 5px 9px;
-  font: 700 12px/1 "DM Sans", sans-serif;
+  font: 700 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0.06em;
 }
 
@@ -121,7 +119,7 @@ a {
   display: inline-block;
   margin-bottom: 14px;
   color: var(--accent);
-  font: 800 13px/1.2 "Manrope", sans-serif;
+  font: 800 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -129,7 +127,7 @@ a {
 .hero h1 {
   max-width: 880px;
   margin: 0;
-  font: 800 clamp(46px, 6vw, 78px)/1.03 "Manrope", sans-serif;
+  font: 800 clamp(46px, 6vw, 78px)/1.03 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.055em;
 }
 
@@ -317,7 +315,7 @@ a {
 
 .results-head h2 {
   margin: 0;
-  font: 800 34px/1.15 "Manrope", sans-serif;
+  font: 800 34px/1.15 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.035em;
 }
 
@@ -477,7 +475,7 @@ a {
 .card-heading h3 {
   margin: 0;
   max-width: 470px;
-  font: 800 23px/1.25 "Manrope", sans-serif;
+  font: 800 23px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.025em;
 }
 
@@ -675,7 +673,7 @@ footer p {
 
 .modal-head h2 {
   margin: 0;
-  font: 800 30px/1.15 "Manrope", sans-serif;
+  font: 800 30px/1.15 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.035em;
 }
 
@@ -764,7 +762,7 @@ footer p {
 
 .success-state h3 {
   margin: 0;
-  font: 800 25px/1.2 "Manrope", sans-serif;
+  font: 800 25px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .success-state p {
@@ -879,6 +877,7 @@ footer p {
   padding: 0;
   background: transparent;
   color: inherit;
+  text-decoration: none;
 }
 
 .main-nav {
@@ -979,7 +978,7 @@ footer p {
 
 .value-strip strong {
   margin-bottom: 5px;
-  font: 800 15px/1.2 "Manrope", sans-serif;
+  font: 800 15px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .value-strip span {
@@ -1051,7 +1050,7 @@ footer p {
 }
 
 .result-stats strong {
-  font: 800 21px/1 "Manrope", sans-serif;
+  font: 800 21px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .result-stats span {
@@ -1215,7 +1214,7 @@ footer p {
 .detail-head h2 {
   margin: 13px 0 0;
   max-width: 690px;
-  font: 800 34px/1.15 "Manrope", sans-serif;
+  font: 800 34px/1.15 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.035em;
 }
 
@@ -1269,7 +1268,7 @@ footer p {
 
 .detail-section h3 {
   margin: 0 0 10px;
-  font: 800 16px/1.3 "Manrope", sans-serif;
+  font: 800 16px/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .detail-section p {
@@ -1328,7 +1327,7 @@ footer p {
 
 .saved-head h1 {
   margin: 0;
-  font: 800 clamp(40px, 5vw, 62px)/1.05 "Manrope", sans-serif;
+  font: 800 clamp(40px, 5vw, 62px)/1.05 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.05em;
 }
 
@@ -1375,7 +1374,7 @@ footer p {
 
 .saved-empty h2 {
   margin: 18px 0 0;
-  font: 800 27px/1.2 "Manrope", sans-serif;
+  font: 800 27px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .saved-empty p {
@@ -1665,7 +1664,7 @@ footer p {
 
 .watch-card h2 {
   margin: 19px 0 7px;
-  font: 800 22px/1.25 "Manrope", sans-serif;
+  font: 800 22px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.025em;
 }
 
@@ -1743,7 +1742,7 @@ footer p {
 }
 
 .watch-summary-bar strong {
-  font: 800 20px/1.1 "Manrope", sans-serif;
+  font: 800 20px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .watch-summary-bar span {
@@ -1940,5 +1939,135 @@ footer p {
 
   .pipeline-select-wrap {
     width: 100%;
+  }
+}
+
+
+/* SEO-visible homepage content */
+.seo-home {
+  margin-top: 58px;
+  padding: 52px 0 14px;
+  border-top: 1px solid #dce2da;
+}
+
+.seo-home-intro {
+  max-width: 800px;
+}
+
+.seo-home-intro h2 {
+  margin: 0;
+  font: 800 clamp(32px, 4.5vw, 52px)/1.08 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.seo-home-intro p {
+  max-width: 760px;
+  margin: 18px 0 0;
+  color: #59635c;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.seo-home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.seo-home-grid article {
+  min-height: 180px;
+  padding: 22px;
+  border: 1px solid #dce2da;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.seo-home-grid article > strong {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 24px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e2efe6;
+  color: #266a49;
+  font: 800 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.seo-home-grid h3 {
+  margin: 0;
+  font: 800 18px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.seo-home-grid p {
+  margin: 9px 0 0;
+  color: #69736b;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.seo-link-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.seo-link-grid a {
+  padding: 16px 17px;
+  border: 1px solid #dce2da;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.52);
+  text-decoration: none;
+}
+
+.seo-link-grid a:hover {
+  border-color: #a7b8aa;
+  background: #fff;
+}
+
+.seo-link-grid strong,
+.seo-link-grid span {
+  display: block;
+}
+
+.seo-link-grid strong {
+  font: 800 14px/1.3 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.seo-link-grid span {
+  margin-top: 6px;
+  color: #717a73;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.footer-links a,
+.footer-links button {
+  color: #5f6961;
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  color: var(--accent-dark);
+}
+
+@media (max-width: 860px) {
+  .seo-home-grid,
+  .seo-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .seo-home-grid article {
+    min-height: 0;
+  }
+
+  .footer-links {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }

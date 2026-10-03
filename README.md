@@ -181,6 +181,14 @@ There is no separate VM, container, Node host, Postgres service, or second produ
 
 More detail: [architecture](docs/ARCHITECTURE.md).
 
+## Search visibility
+
+WorkScout keeps the interactive React app at the root while generating a small set of crawlable static landing pages and practical guides for distinct search intents.
+
+The SEO surface includes canonical URLs, sitemap/robots controls, Open Graph metadata, structured data, breadcrumb markup, a real 404, API noindex headers, crawlable internal links, and static HTML content for crawlers that do not execute JavaScript.
+
+See [SEO architecture and launch checklist](docs/SEO.md).
+
 ## Why the core search does not require an LLM
 
 The product intentionally keeps its critical path deterministic and inexpensive.

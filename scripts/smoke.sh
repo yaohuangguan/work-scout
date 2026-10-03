@@ -223,6 +223,7 @@ assert any(x['status'] == 'applied' for x in items)
 PY
 
 echo "HTML_ROOT:"
-curl -fsS --max-time 5 http://127.0.0.1:8787/ | head -c 120
+curl -fsS --max-time 5 http://127.0.0.1:8787/ >/tmp/workscout-root.html
+head -c 120 /tmp/workscout-root.html
 echo
 echo "OPENMESH_WORKER_SCOUT_WATCH_PIPELINE_SMOKE_OK"

@@ -1,9 +1,24 @@
 {
-  "name": "WorkScout",
+  "id": "/",
+  "name": "WorkScout — Remote Work Discovery",
   "short_name": "WorkScout",
-  "description": "Find remote work you can actually take.",
+  "description": "Find remote jobs, freelance contracts and direct hiring leads that fit your location, availability and skills.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f6f7f2",
-  "theme_color": "#171a18"
+  "theme_color": "#f6f7f2",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon-96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
 }
