@@ -1,45 +1,100 @@
 # WorkScout
 
-WorkScout is an MVP for finding remote work you can actually take, rather than browsing job titles.
+WorkScout helps people find remote work they can actually take.
 
-## What works now
+Instead of acting like another job board, it combines structured remote-job feeds with direct hiring leads, normalizes them into one model, checks location restrictions and flexibility, then explains why each opportunity surfaced.
 
-- Natural-language work search
-- Search planning / keyword expansion
-- Remote eligibility checks for the user's country
-- Availability-aware ranking for contract, part-time, gig, and full-time work
-- Live aggregation from Himalayas, Remote OK, and Remotive
-- Unified deduped result model with source attribution
-- Direct links back to original listings
-- Community work posts stored in Cloudflare D1
-- Direct poster contact via email or application URL
-- React + TypeScript frontend and Cloudflare Worker backend
-- Unit tests and an end-to-end smoke script
+Live: https://workscout.nzs.workers.dev
+
+## Product v1
+
+### Discovery
+- Natural-language skill search
+- Query expansion for software, support, data entry, video editing, design, writing, sales, marketing, VA work, website maintenance, and more
+- Country-aware eligibility checks
+- Weekly-availability-aware ranking
+- Contract / part-time / gig / full-time preferences
+- Freshness and source filters
+- Cross-source deduplication
+
+### Sources
+- Reddit r/forhire — only fresh `[Hiring]` posts are ingested as direct leads
+- Hacker News “Freelancer? Seeking freelancer?” — only `SEEKING FREELANCER` comments
+- Himalayas
+- Remote OK
+- Remotive
+- WorkScout community posts
+
+All external results keep clear source attribution and link back to the original page.
+
+### Product experience
+- Explore and Saved views
+- Local saved-opportunity shortlist
+- Recent searches stored on-device
+- Result detail modal
+- Direct-lead highlighting
+- Search-plan and source-health visibility
+- Location / freshness / source filtering
+- Automatic country detection through Cloudflare when supported
+- Responsive light UI with readable type sizes
+- Post-work flow backed by D1
+
+### Safety / abuse controls
+- Strict post validation
+- HTTP(S) / email-only contact validation
+- Honeypot field
+- Hashed per-connection posting throttle
+- No raw IP addresses stored
+- Old throttle events are automatically cleaned up
+- React output escaping for community content
 
 ## Architecture
 
-```
-React + Vite
-    |
-    v
-Cloudflare Worker /api
-    |
-    +--> Himalayas API
-    +--> Remote OK API
-    +--> Remotive API
-    +--> Cloudflare D1 (WorkScout community posts)
-    |
-    v
-Normalization -> eligibility -> scoring -> dedupe -> ranked WorkItem[]
+```text
+React + Vite + TypeScript
+          |
+          v
+Cloudflare Worker / Hono
+          |
+          +--> Reddit r/forhire Atom feed
+          +--> HN Algolia API
+          +--> Himalayas API
+          +--> Remote OK API
+          +--> Remotive API
+          +--> Cloudflare D1
+          |
+          v
+query planning
+ -> source adapters
+ -> normalization
+ -> eligibility
+ -> ranking
+ -> cross-source dedupe
+ -> WorkItem[]
 ```
 
-The current search layer is intentionally deterministic. A future LLM adapter can improve query planning, lead classification, summarization, and ambiguous eligibility checks without making the basic product depend on a paid model.
+External HTTP requests use short Cloudflare cache TTLs so normal searches do not continuously hammer upstream sources.
 
-## Run locally
+## Why no required LLM yet?
+
+The first product intentionally keeps its critical path deterministic and cheap.
+
+A future LLM layer can improve:
+- free-form query expansion
+- unstructured lead classification
+- ambiguous country / timezone interpretation
+- semantic matching
+- summarization
+- scam / low-quality signals
+
+But basic discovery continues working if no model key exists.
+
+## Local development
 
 ```bash
 source ~/.nvm/nvm.sh
 nvm use 24
+
 npm install
 npm run db:migrate:local
 npm run dev
@@ -49,14 +104,23 @@ UI: http://localhost:5173
 
 Worker API: http://localhost:8787
 
-## Verify
+## Verification
 
 ```bash
 npm run check
-./scripts/smoke.sh
+npm run smoke
 ```
 
-The smoke test verifies health, live external search, D1 posting, searching the newly posted community work, contact-link generation, and static asset serving.
+`npm run check` runs TypeScript, Vitest, and the production Vite build.
+
+The smoke test verifies:
+- Worker health
+- all configured discovery sources
+- live external search
+- D1 community publishing
+- immediate searchability of the published work
+- contact-link generation
+- SPA asset serving
 
 ## Deploy
 
@@ -65,16 +129,20 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
-Current deployment: https://workscout.nzs.workers.dev
+Cloudflare resources:
+- Worker: `workscout`
+- D1: `workscout-db`
 
-## Data sources
+## Repository
 
-External listings remain owned and hosted by their original sources. WorkScout links users back to the original listing and visibly attributes the source.
+https://github.com/yaohuangguan/work-scout
 
-- Himalayas: https://himalayas.app
-- Remote OK: https://remoteok.com
-- Remotive: https://remotive.com
+## Near-term roadmap
 
-## Next product layer
-
-The next useful step is not adding more UI. It is expanding from job-board feeds into real work leads: company career pages / ATS, public community posts, startup hiring signals, Reddit/HN-style requests, freshness checks, and an optional LLM classification layer for unstructured leads.
+The next step should deepen lead coverage instead of adding generic marketplace features:
+- more public freelance / hiring communities
+- ATS discovery (Greenhouse / Lever / Ashby)
+- company career-page indexing
+- saved-search alerts
+- optional LLM lead classifier
+- account sync only when cross-device saved searches become necessary

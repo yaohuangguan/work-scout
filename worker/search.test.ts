@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planQuery, scoreWork, type SearchPreferences, type WorkItem } from "./search";
+import { dedupeWorkItems, planQuery, scoreWork, type SearchPreferences, type WorkItem } from "./search";
 
 const prefs: SearchPreferences = {
   raw: "React contract",
@@ -54,5 +54,22 @@ describe("scoreWork", () => {
     const contract = scoreWork(item({ type: "Contract" }), prefs, ["react"]);
     const fullTime = scoreWork(item({ type: "Full-time", kind: "Job" }), prefs, ["react"]);
     expect(contract.score).toBeGreaterThan(fullTime.score);
+  });
+
+  it("gives direct leads a deliberate ranking boost", () => {
+    const lead = scoreWork(item({ kind: "Lead", source: "HN Freelance", type: "Freelance / Contract" }), prefs, ["react"]);
+    const job = scoreWork(item({ kind: "Job", source: "Test", type: "Contract" }), prefs, ["react"]);
+    expect(lead.score).toBeGreaterThan(job.score);
+  });
+});
+
+
+describe("dedupeWorkItems", () => {
+  it("keeps the stronger version of the same company/title pair", () => {
+    const base = { ...item(), score: 60, why: ["a"] };
+    const stronger = { ...item({ source: "Other" }), score: 85, why: ["b"] };
+    const result = dedupeWorkItems([base, stronger]);
+    expect(result).toHaveLength(1);
+    expect(result[0].score).toBe(85);
   });
 });

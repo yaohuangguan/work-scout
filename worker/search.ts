@@ -144,6 +144,8 @@ export function scoreWork(item: Omit<WorkItem, "score" | "why">, prefs: SearchPr
   if (item.eligibility === "eligible") score += 24;
   if (item.eligibility === "uncertain") score += 8;
   if (item.eligibility === "restricted") score -= 35;
+  if (item.kind === "Lead") score += 14;
+  if (item.source === "HN Freelance") score += 5;
 
   const type = lower(item.type);
   const wanted = prefs.workTypes.map((v) => v.toLowerCase());
@@ -178,13 +180,35 @@ export function scoreWork(item: Omit<WorkItem, "score" | "why">, prefs: SearchPr
   };
 }
 
-async function getJson(url: string) {
+async function getJson(url: string, cacheTtl = 300) {
   const response = await fetch(url, {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", "User-Agent": "WorkScout/0.2" },
     signal: AbortSignal.timeout(8_000),
-  });
+    cf: { cacheTtl, cacheEverything: true },
+  } as RequestInit & { cf: { cacheTtl: number; cacheEverything: boolean } });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<any>;
+}
+
+async function getText(url: string, cacheTtl = 180) {
+  const response = await fetch(url, {
+    headers: { Accept: "application/atom+xml,text/xml;q=0.9,*/*;q=0.8", "User-Agent": "WorkScout/0.2 (remote work discovery)" },
+    signal: AbortSignal.timeout(8_000),
+    cf: { cacheTtl, cacheEverything: true },
+  } as RequestInit & { cf: { cacheTtl: number; cacheEverything: boolean } });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.text();
+}
+
+function decodeXml(value: string) {
+  return value
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function finalize(base: Omit<WorkItem, "score" | "why">, prefs: SearchPreferences, terms: string[]): WorkItem {
@@ -198,7 +222,7 @@ async function fetchHimalayas(prefs: SearchPreferences, plan: QueryPlan): Promis
       url.searchParams.set("q", q);
       url.searchParams.set("sort", "recent");
       url.searchParams.set("page", "1");
-      if (prefs.countryCode) url.searchParams.set("country", prefs.countryCode);
+      if (prefs.countryCode && prefs.countryCode !== "ANY") url.searchParams.set("country", prefs.countryCode);
       const data = await getJson(url.toString());
       return Array.isArray(data.jobs) ? data.jobs : [];
     })
@@ -300,7 +324,123 @@ async function fetchRemotive(prefs: SearchPreferences, plan: QueryPlan): Promise
   });
 }
 
-function dedupe(items: WorkItem[]) {
+function extractLeadLocation(text: string) {
+  const compact = clean(text).slice(0, 260);
+  if (/remote\s*(worldwide|anywhere)|worldwide\s*remote/i.test(compact)) return "Worldwide";
+  const paren = compact.match(/remote\s*\(([^)]+)\)/i);
+  if (paren) return `Remote (${paren[1].trim()})`;
+  const pipe = compact.match(/seeking freelancer\s*\|\s*([^|]{2,80})/i);
+  if (pipe) return clean(pipe[1]);
+  const location = compact.match(/location\s*:\s*([^|;]{2,80})/i);
+  if (location) return clean(location[1]);
+  if (/\bremote\b/i.test(compact)) return "Remote · check details";
+  return "Check post";
+}
+
+async function fetchRedditForHire(prefs: SearchPreferences, plan: QueryPlan): Promise<WorkItem[]> {
+  const xml = await getText("https://www.reddit.com/r/forhire/new/.rss", 180);
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((match) => match[1]);
+  const queryTerms = plan.terms.map((term) => term.toLowerCase());
+
+  const readTag = (entry: string, tag: string) => {
+    const match = entry.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"));
+    return match ? decodeXml(match[1]) : "";
+  };
+
+  return entries
+    .map((entry) => {
+      const title = clean(readTag(entry, "title"));
+      const content = clean(decodeXml(readTag(entry, "content")));
+      const link = decodeXml(entry.match(/<link\s+href="([^"]+)"/i)?.[1] || "");
+      const author = clean(readTag(entry, "name")).replace(/^\/u\//, "");
+      const updated = clean(readTag(entry, "updated"));
+      return { title, content, link, author, updated };
+    })
+    .filter((entry) => /^\[hiring\]/i.test(entry.title))
+    .filter((entry) => {
+      const haystack = lower(`${entry.title} ${entry.content}`);
+      return queryTerms.some((term) => haystack.includes(term));
+    })
+    .slice(0, 40)
+    .map((entry) => {
+      const haystack = lower(`${entry.title} ${entry.content}`);
+      const matched = plan.terms.filter((term) => haystack.includes(term.toLowerCase())).slice(0, 5);
+      const location = extractLeadLocation(`${entry.title} ${entry.content}`);
+      const e = inferEligibility(location, prefs.countryCode);
+      const salary = entry.content.match(/(?:USD|NZD|AUD|CAD|£|€|\$)\s?\d[\d,.]*(?:\s*(?:-|–|to)\s*(?:[$£€])?\d[\d,.]*)?(?:\s*(?:\/hr|per hour|fixed))?/i)?.[0] || null;
+
+      return finalize({
+        id: `reddit-forhire:${entry.link || entry.title}`,
+        title: clean(entry.title.replace(/^\[hiring\]\s*/i, "")),
+        company: entry.author ? `Reddit u/${entry.author}` : "Reddit poster",
+        summary: entry.content.slice(0, 520),
+        source: "Reddit r/forhire",
+        sourceUrl: entry.link,
+        applyUrl: entry.link,
+        postedAt: entry.updated || null,
+        type: "Freelance / Gig",
+        location,
+        salary,
+        tags: unique(["Direct lead", "Freelance", ...matched]),
+        eligibility: e.eligibility,
+        eligibilityText: e.text,
+        kind: "Lead",
+      }, prefs, plan.terms);
+    });
+}
+
+async function fetchHnFreelance(prefs: SearchPreferences, plan: QueryPlan): Promise<WorkItem[]> {
+  const since = Math.floor(Date.now() / 1000) - 120 * 86_400;
+  const url = new URL("https://hn.algolia.com/api/v1/search_by_date");
+  url.searchParams.set("query", "SEEKING FREELANCER");
+  url.searchParams.set("tags", "comment");
+  url.searchParams.set("numericFilters", `created_at_i>${since}`);
+  url.searchParams.set("hitsPerPage", "100");
+
+  const data = await getJson(url.toString(), 600);
+  const hits = Array.isArray(data.hits) ? data.hits : [];
+  const queryTerms = plan.terms.map((term) => term.toLowerCase());
+
+  return hits
+    .filter((hit: any) => /freelancer\? seeking freelancer\?/i.test(String(hit.story_title || "")))
+    .filter((hit: any) => /seeking freelancer/i.test(clean(hit.comment_text || "")))
+    .filter((hit: any) => {
+      const body = lower(hit.comment_text || "");
+      return queryTerms.some((term) => body.includes(term));
+    })
+    .slice(0, 40)
+    .map((hit: any) => {
+      const body = clean(hit.comment_text || "");
+      const matched = plan.terms.filter((term) => lower(body).includes(term.toLowerCase())).slice(0, 5);
+      const location = extractLeadLocation(body);
+      const e = inferEligibility(location, prefs.countryCode);
+      const author = clean(hit.author || "HN poster");
+      const title = matched.length
+        ? `Freelance help wanted: ${matched.slice(0, 2).join(" / ")}`
+        : "Freelance help wanted";
+      const itemUrl = `https://news.ycombinator.com/item?id=${hit.objectID}`;
+
+      return finalize({
+        id: `hn-freelance:${hit.objectID}`,
+        title,
+        company: `HN @${author}`,
+        summary: body.replace(/^SEEKING FREELANCER\s*[:|—-]?\s*/i, "").slice(0, 520),
+        source: "HN Freelance",
+        sourceUrl: itemUrl,
+        applyUrl: itemUrl,
+        postedAt: hit.created_at || null,
+        type: "Freelance / Contract",
+        location,
+        salary: null,
+        tags: unique(["Direct lead", "Freelance", ...matched]),
+        eligibility: e.eligibility,
+        eligibilityText: e.text,
+        kind: "Lead",
+      }, prefs, plan.terms);
+    });
+}
+
+export function dedupeWorkItems(items: WorkItem[]) {
   const seen = new Map<string, WorkItem>();
   for (const item of items) {
     const key = `${lower(item.company)}::${lower(item.title).replace(/[^a-z0-9]+/g, " ")}`;
@@ -313,6 +453,8 @@ function dedupe(items: WorkItem[]) {
 export async function searchExternal(prefs: SearchPreferences) {
   const plan = planQuery(prefs.raw);
   const sources = [
+    ["Reddit r/forhire", () => fetchRedditForHire(prefs, plan)],
+    ["HN Freelance", () => fetchHnFreelance(prefs, plan)],
     ["Himalayas", () => fetchHimalayas(prefs, plan)],
     ["Remote OK", () => fetchRemoteOk(prefs, plan)],
     ["Remotive", () => fetchRemotive(prefs, plan)],
@@ -329,7 +471,7 @@ export async function searchExternal(prefs: SearchPreferences) {
     })
   );
 
-  const items = dedupe(settled.flatMap((s) => s.items))
+  const items = dedupeWorkItems(settled.flatMap((s) => s.items))
     .sort((a, b) => b.score - a.score)
     .slice(0, 100);
 

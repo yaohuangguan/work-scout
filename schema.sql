@@ -14,3 +14,12 @@ CREATE TABLE IF NOT EXISTS posts (
 
 CREATE INDEX IF NOT EXISTS idx_posts_status_created_at
   ON posts(status, created_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS post_events (
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_events_fingerprint_created_at
+  ON post_events(fingerprint, created_at DESC);

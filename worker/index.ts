@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { communityRowToItem, planQuery, searchExternal, type SearchPreferences } from "./search";
+import { communityRowToItem, dedupeWorkItems, planQuery, searchExternal, type SearchPreferences } from "./search";
 
 type Env = {
   Bindings: {
@@ -14,8 +14,8 @@ app.use("/api/*", cors());
 
 function parsePrefs(url: URL): SearchPreferences {
   const raw = (url.searchParams.get("q") || "").trim() || "remote";
-  const countryCode = (url.searchParams.get("country") || "NZ").toUpperCase();
-  const countryLabel = url.searchParams.get("countryLabel") || (countryCode === "NZ" ? "New Zealand" : countryCode);
+  const countryCode = (url.searchParams.get("country") || "ANY").toUpperCase();
+  const countryLabel = url.searchParams.get("countryLabel") || (countryCode === "ANY" ? "Anywhere / not sure" : countryCode);
   const hours = Number(url.searchParams.get("hours") || "20");
   const types = (url.searchParams.get("types") || "contract,part-time,gig")
     .split(",")
@@ -52,9 +52,16 @@ app.get("/api/health", (c) =>
     ok: true,
     service: "workscout",
     now: new Date().toISOString(),
-    sources: ["Himalayas", "Remote OK", "Remotive", "WorkScout Community"],
+    sources: ["Reddit r/forhire", "HN Freelance", "Himalayas", "Remote OK", "Remotive", "WorkScout Community"],
   })
 );
+
+app.get("/api/meta", (c) => {
+  const request = c.req.raw as Request & { cf?: { country?: string } };
+  const detected = String(request.cf?.country || "").toUpperCase();
+  const supported = new Set(["NZ", "AU", "US", "CA", "GB"]);
+  return c.json({ country: supported.has(detected) ? detected : "ANY" });
+});
 
 app.get("/api/search", async (c) => {
   const prefs = parsePrefs(new URL(c.req.url));
@@ -63,7 +70,7 @@ app.get("/api/search", async (c) => {
     getCommunity(c.env.DB, prefs).catch(() => []),
   ]);
 
-  const items = [...community, ...external.items]
+  const items = dedupeWorkItems([...community, ...external.items])
     .sort((a, b) => b.score - a.score)
     .slice(0, 100);
 
@@ -79,11 +86,29 @@ app.get("/api/search", async (c) => {
   });
 });
 
+async function fingerprintFor(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 app.post("/api/posts", async (c) => {
   if (!c.env.DB) return c.json({ error: "Posting database is not configured." }, 503);
 
   const body = await c.req.json().catch(() => null) as any;
   if (!body) return c.json({ error: "Invalid JSON body." }, 400);
+  if (String(body.website || "").trim()) return c.json({ ok: true }, 201);
+
+  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "local";
+  const fingerprint = await fingerprintFor(`workscout:v1:${ip}`);
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const recent = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM post_events WHERE fingerprint = ? AND created_at >= ?"
+  ).bind(fingerprint, cutoff).first();
+
+  if (Number(recent?.count || 0) >= 4) {
+    return c.json({ error: "Too many posts from this connection. Try again later." }, 429);
+  }
 
   const title = String(body.title || "").trim();
   const company = String(body.company || "").trim() || "Independent";
@@ -102,12 +127,22 @@ app.post("/api/posts", async (c) => {
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
 
-  await c.env.DB.prepare(
-    `INSERT INTO posts (id, title, company, description, skills, work_type, location_scope, contact, budget, created_at, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
-  )
-    .bind(id, title, company, description, skills, workType, locationScope, contact, budget, createdAt)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO posts (id, title, company, description, skills, work_type, location_scope, contact, budget, created_at, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
+    ).bind(id, title, company, description, skills, workType, locationScope, contact, budget, createdAt),
+    c.env.DB.prepare(
+      "INSERT INTO post_events (fingerprint, created_at) VALUES (?, ?)"
+    ).bind(fingerprint, createdAt),
+  ]);
+
+  c.executionCtx.waitUntil(
+    c.env.DB.prepare("DELETE FROM post_events WHERE created_at < ?")
+      .bind(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+      .run()
+      .catch(() => undefined)
+  );
 
   return c.json({ ok: true, id, createdAt }, 201);
 });
